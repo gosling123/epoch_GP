@@ -95,6 +95,12 @@ def rat_quad_kernel(X_a, X_b, hyper_param=[1, 1, 1]):
 # Non-separable kernels
 ######################################################
 
+def mahalanobis_distance(X_a, X_b, Lambda_inv):
+    """Compute Mahalanobis distance matrix."""
+    # Use cdist to compute pairwise Mahalanobis distance
+    distances = scipy.spatial.distance.cdist(X_a, X_b, metric='mahalanobis', VI=Lambda_inv)
+    return distances
+
 def matern_kernel_NS(X_a, X_b, var, Lambda_inv, nu=1.5):
     """
     Computes the non-separable Matern Kernel for inputs X_a and X_b.
@@ -117,7 +123,8 @@ def matern_kernel_NS(X_a, X_b, var, Lambda_inv, nu=1.5):
     """
     
     # Mahalanobis distance
-    dist = scipy.spatial.distance.mahalanobis(X_a, X_b, Lambda_inv)
+    # dist = scipy.spatial.distance.mahalanobis(X_a, X_b, Lambda_inv)
+    dist = mahalanobis_distance(X_a, X_b, Lambda_inv)
     
     # Exponential kernel
     if nu == 0.5:
@@ -156,7 +163,8 @@ def rbf_kernel_NS(X_a, X_b, var, Lambda_inv):
     """
     
     # Square Mahalanobis distance
-    sqdist = scipy.spatial.distance.mahalanobis(X_a, X_b, Lambda_inv)**2
+    # sqdist = scipy.spatial.distance.mahalanobis(X_a, X_b, Lambda_inv)**2
+    sqdist = mahalanobis_distance(X_a, X_b, Lambda_inv)**2
     return var * np.exp(-0.5 * sqdist)
 
 
@@ -182,7 +190,8 @@ def rat_quad_kernel_NS(X_a, X_b, var, Lambda_inv, alpha):
     """
     
     # Mahalanobis distance
-    sqdist = scipy.spatial.distance.mahalanobis(X_a, X_b, Lambda_inv)**2
+    # sqdist = scipy.spatial.distance.mahalanobis(X_a, X_b, Lambda_inv)**2
+    sqdist = mahalanobis_distance(X_a, X_b, Lambda_inv)**2
     return var * (1 + (sqdist / (2 * alpha)))**(-alpha)
 
 
@@ -264,35 +273,88 @@ def make_kernel_nD(kern_labels, kern_ops, X_a, X_b, hypers):
         The resulting combined kernel matrix.
     """
     
+    
     idx = 0
 
-    # Set kernel
+    check_array = []
     for i in range(len(kern_labels)):
-        X_1 = X_a[:,i]
-        X_2 = X_b[:,i]
-        if kern_labels[i] == 'RBF':
-            K_i = rbf_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2])
-            idx += 2
-        elif kern_labels[i] == 'EXP':
-            K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=0.5) 
-            idx += 2
-        elif kern_labels[i] == 'MATERN_3_2':
-            K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=1.5)
-            idx += 2 
-        elif kern_labels[i] == 'MATERN_5_2':
-            K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=2.5)
-            idx += 2
-        elif kern_labels[i] == 'RAT_QUAD':
-            K_i = rat_quad_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+3])
-            idx += 3
+        check_array.append(extract_numbers_after_kernel(kern_labels[i]))
+    check = check_dim_nums(check_array)
+
+    if check == "strings_and_none" or check == "mixed_type":
+        sys.exit('(ERROR) purely seperable kernels should all have no numbers after kernel label,\
+                  (order is aummed ascending dimesnion), or all have numbers where each kernel marks a given dimension')
+   
+    elif check == "all_none":
+        # Set kernel assuming labels are for ascending dimesnion number
+        for i in range(len(kern_labels)):
+            X_1 = X_a[:,i]
+            X_2 = X_b[:,i]
+            if kern_labels[i] == 'RBF':
+                K_i = rbf_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2])
+                idx += 2
+            elif kern_labels[i] == 'EXP':
+                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=0.5) 
+                idx += 2
+            elif kern_labels[i] == 'MATERN_3_2':
+                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=1.5)
+                idx += 2 
+            elif kern_labels[i] == 'MATERN_5_2':
+                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=2.5)
+                idx += 2
+            elif kern_labels[i] == 'RAT_QUAD':
+                K_i = rat_quad_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+3])
+                idx += 3
             
-        if i == 0:
-            kernel = K_i
-        else:
-            if kern_ops[i-1] == '*':
-                kernel *= K_i
-            elif kern_ops[i-1] == '+':
-                kernel += K_i
+            if i == 0:
+                kernel = K_i
+            else:
+                if kern_ops[i-1] == '*':
+                    kernel *= K_i
+                elif kern_ops[i-1] == '+':
+                    kernel += K_i
+    
+    elif check == "all_strings":
+        # Set kernel where numbers after string define chosen dimesnions
+        for i in range(len(kern_labels)):
+            dims = extract_numbers_after_kernel(kern_labels[i])
+            label = get_kernel_label(kern_labels[i])
+            
+            if len(dims) == 1:
+                X_1 = X_a[:,int(dims)-1]
+                X_2 = X_b[:,int(dims)-1]
+            elif len(dims) == 2:
+                X_1 = X_a[:,int(dims[0])-1]
+                X_2 = X_b[:,int(dims[1])-1]
+            elif len(dims) > 2:
+                sys.exit('(ERROR) : If using kernel to compute across dimesnions then only 2 numbers should be given after kernel label')
+            
+            
+            if label == 'RBF':
+                K_i = rbf_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2])
+                idx += 2
+            elif label == 'EXP':
+                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=0.5) 
+                idx += 2
+            elif label == 'MATERN_3_2':
+                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=1.5)
+                idx += 2 
+            elif label == 'MATERN_5_2':
+                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=2.5)
+                idx += 2
+            elif label == 'RAT_QUAD':
+                K_i = rat_quad_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+3])
+                idx += 3
+            
+            if i == 0:
+                kernel = K_i
+            else:
+                if kern_ops[i-1] == '*':
+                    kernel *= K_i
+                elif kern_ops[i-1] == '+':
+                    kernel += K_i
+    
+    
     return kernel
 
 
@@ -316,8 +378,7 @@ def make_kernel_NS(kern_labels, kern_ops, X_a, X_b, hypers):
     ndarray
         The resulting combined non-separable kernel matrix.
     """
-    
-    
+     
     if len(kern_labels) == 1:
         # Which kernel
         label = kern_labels[0].split("_NS")[0]
@@ -353,52 +414,52 @@ def make_kernel_NS(kern_labels, kern_ops, X_a, X_b, hypers):
             
             # Seperable
             if check == None:
-                dim = extract_numbers_after_kernel(kern_labels[i])
-                if len(dim) != 1:
-                    sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one number after the label, and non-seperable have two with lowest dimension first')
-                else:
-                    X_1 = X_a[:,int(dim)-1]
-                    X_2 = X_b[:,int(dim)-1]
-                    if kern_labels[i][:-2] == 'RBF':
-                        K_i = rbf_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2])
-                        idx += 2
-                    elif kern_labels[i][:-2] == 'EXP':
-                        K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=0.5) 
-                        idx += 2
-                    elif kern_labels[i][:-2] == 'MATERN_3_2':
-                        K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=1.5)
-                        idx += 2 
-                    elif kern_labels[i][:-2] == 'MATERN_5_2':
-                        K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=2.5)
-                        idx += 2
-                    elif kern_labels[i][:-2] == 'RAT_QUAD':
-                        K_i = rat_quad_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+3])
-                        idx += 3
+                dims = extract_numbers_after_kernel(kern_labels[i])
+                label = get_kernel_label(kern_labels[i])
+                
+                if len(dims) == 1:
+                    X_1 = X_a[:,int(dims)-1]
+                    X_2 = X_b[:,int(dims)-1]
+                elif len(dims) == 2:
+                    X_1 = X_a[:,int(dims[0])-1]
+                    X_2 = X_b[:,int(dims[1])-1]
+                if len(dim) > 2:
+                    sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one or two numbers after the label,\
+                             whilst non-seperable kernels have at least 2')
+                
+                if label == 'RBF':
+                    K_i = rbf_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2])
+                    idx += 2
+                elif label == 'EXP':
+                    K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=0.5) 
+                    idx += 2
+                elif label == 'MATERN_3_2':
+                    K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=1.5)
+                    idx += 2 
+                elif label == 'MATERN_5_2':
+                    K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=2.5)
+                    idx += 2
+                elif label == 'RAT_QUAD':
+                    K_i = rat_quad_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+3])
+                    idx += 3
+            
             # Non seperable
             else:
                 dim = extract_numbers_after_kernel(kern_labels[i])
-                dim_check = is_ascending_string(dim)
-
-                if dim_check == False:
-                    sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one number after the label, and non-seperable have two or more in ascending order')
-                else:
-                    use_dims = []
-                    for d in dim:
-                        use_dims.append(int(d)-1)
-
-                    X_1 = X_a[:, use_dims]
-                    X_2 = X_b[:, use_dims]
+                use_dims = []
+                for d in dim:
+                    use_dims.append(int(d)-1)
+                X_1 = X_a[:, use_dims]
+                X_2 = X_b[:, use_dims]
                     
-                    # Which kernel
-                    label = kern_labels[i].split("_NS")[0]
-
-                    # Fill lower triangular matrix
-                    L = np.zeros((X_1.shape[-1], X_1.shape[-1]))
-                    L[np.tril_indices(X_1.shape[-1])] = hypers[idx+1:int(0.5*X_1.shape[-1]*(X_1.shape[-1]+1))+1]
-        
-                    # Compute inverse covariance
-                    Lambda = np.dot(L, L.T)
-                    Lambda_inv = np.linalg.inv(Lambda)
+                # Which kernel
+                label = kern_labels[i].split("_NS")[0]
+                # Fill lower triangular matrix
+                L = np.zeros((X_1.shape[-1], X_1.shape[-1]))
+                L[np.tril_indices(X_1.shape[-1])] = hypers[idx+1:int(0.5*X_1.shape[-1]*(X_1.shape[-1]+1))+1]
+                # Compute inverse covariance
+                Lambda = np.dot(L, L.T)
+                Lambda_inv = np.linalg.inv(Lambda)
 
                 if label == 'RBF':
                     K_i = rbf_kernel_NS(X_1, X_2, hypers[idx], Lambda_inv)
@@ -426,15 +487,35 @@ def make_kernel_NS(kern_labels, kern_ops, X_a, X_b, hypers):
     
     return kernel
 
+
+
+def get_kernel_label(kernel_str):
+    kernels=('RBF', 'EXP', 'MATERN_3_2', 'MATERN_5_2', 'RAT_QUAD')
+    for kernel in kernels:
+        if kernel_str.startswith(kernel):
+            return kernel
+    return None  # Return None if no match is found
+
 def extract_numbers_after_kernel(s):
     kernels = ('RBF', 'EXP', 'MATERN_3_2', 'MATERN_5_2', 'RAT_QUAD')
     
     for kernel in kernels:
         if s.startswith(kernel):  # Check if string starts with a known kernel
             num_part = "".join(char for char in s[len(kernel):] if char.isdigit())
-            return int(num_part) if num_part else None  # Convert to int if found
+            return num_part if num_part else None  # Convert to int if found
     
     return None  # Return None if no kernel is matched
 
-def is_ascending_string(s):
-    return all(s[i] <= s[i + 1] for i in range(len(s) - 1))
+def check_dim_nums(lst):
+    if all(item is None for item in lst):
+        return "all_none"
+    elif all(isinstance(item, str) for item in lst):
+        return "all_strings"
+    elif all(isinstance(item, str) or item is None for item in lst):
+        return "strings_and_none"
+    else:
+        return "mixed_types"
+
+
+# def is_ascending_string(s):
+#     return all(s[i] <= s[i + 1] for i in range(len(s) - 1))

@@ -1,6 +1,6 @@
 import numpy as np
 import scipy.stats 
-from GP_model import kernels
+from Model import kernels
 import warnings
 warnings.filterwarnings('ignore')
 import sys
@@ -14,16 +14,38 @@ import pickle
 
 
 
-# Kernel Checker
-def check_kernels(kern, kern_ops, kern_list, ops_list):
-    if isinstance(kern, list) and all(isinstance(k, str) and k in kern_list for k in kern):
-        if len(kern_ops) != len(kern) - 1:
-            sys.exit('(ERROR!) : Kernel operations must have length len(kern)-1, as only n-1 operations are required for n combined kernels')
-    else:
-        sys.exit(f'(ERROR!) : Kernel name not valid, accepted labels are {kern_list}')
-    if not all(op in ops_list for op in kern_ops):
-        sys.exit(f'(ERROR!) : Kernel operation not recognised, allowed operation labels are {ops_list}')
+# # Kernel Checker
+# def check_kernels(kern, kern_ops, kern_list, ops_list):
+#     if isinstance(kern, list) and all(isinstance(k, str) and k in kern_list for k in kern):
+#         if len(kern_ops) != len(kern) - 1:
+#             sys.exit('(ERROR!) : Kernel operations must have length len(kern)-1, as only n-1 operations are required for n combined kernels')
+#     else:
+#         sys.exit(f'(ERROR!) : Kernel name not valid, accepted labels are {kern_list}')
+#     if not all(op in ops_list for op in kern_ops):
+#         sys.exit(f'(ERROR!) : Kernel operation not recognised, allowed operation labels are {ops_list}')
         
+
+def check_kernels(kern, kern_ops, kern_list, ops_list):
+
+    for k in kern:
+        if k in kern_list:
+            continue
+        elif k.startswith(kern_list) == False:
+            sys.exit(f'(ERROR) : Kernel {k} is not defined. Kernels should start with {kern_list}')
+    
+    if len(kern_ops) != len(kern) - 1:
+            sys.exit('(ERROR!) : Kernel operations must have length len(kern)-1, as only n-1 operations are required for n combined kernels')
+    if not all(op in ops_list for op in kern_ops):
+        sys.exit(f'(ERROR!) : Kernel operation not recognised, allowed operation labels are {ops_list}')        
+
+
+def contains_all_dims(strings, N):
+    # Extract digits from all strings and convert to a set of unique numbers
+    digit_set = {int(digit) for s in strings for digit in s if digit.isdigit()}
+    
+    # Check if all numbers from 1 to N are in the set
+    return set(range(1, N + 1)).issubset(digit_set)        
+
 
 class GP_class:
 
@@ -36,7 +58,7 @@ class GP_class:
         self.y = y
 
         # set allowed kernel lists
-        self.kern_list = ['EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF', 'RAT_QUAD']
+        self.kern_list = ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF', 'RAT_QUAD')
         self.ops_list = ['*', '+']
 
         # set kernel description
@@ -52,10 +74,44 @@ class GP_class:
             self.non_sep = False
         else:
             self.non_sep = True
-        
-        if self.n_inputs != len(self.kern) and self.n_inputs > 1 and self.non_sep == False:
-            sys.exit('(ERROR) : Please ensure number of kernels (kern) is equal in length to number of input parameters')
 
+        if self.non_sep and self.n_inputs == 1:
+            sys.exit('(ERROR): Cannot have non-seperable kernel for 1 input')
+
+        check_array = []
+        for i in range(len(self.kern)):
+            check_array.append(kernels.extract_numbers_after_kernel(self.kern[i]))
+        self.dim_label_check = kernels.check_dim_nums(check_array)
+        
+        if self.n_inputs > 1 and self.non_sep == False:
+            # Check if assumed seperable in ascending dimesnion order
+            if self.dim_label_check == "all_none" and self.non_sep == False:
+                if self.n_inputs != len(self.kern):
+                    sys.exit('(ERROR) : Please ensure number of kernels (kern) is equal in length to number of input parameters for purely seperable kernels\
+                                where no input number is defined')
+            
+            elif self.dim_label_check == "all_strings":
+                all_dim_check = contains_all_dims(check_array, self.n_inputs)
+                if all_dim_check == False:
+                    sys.exit('(ERROR) : When defining dims for purely seperable case please ensure all dims have been included')
+            
+            elif self.dim_label_check == "strings_and_none" or self.dim_label_check == "mixed_type":
+                sys.exit('(ERROR) purely seperable kernels should all have no numbers after kernel label,\
+                          (order is aummed ascending dimesnion), or all have numbers where each kernel marks a given dimension')
+   
+        elif self.n_inputs > 1 and self.non_sep == True:
+
+            if len(self.kern) == 1 and check_array == "all_strings":
+                sys.exit('(ERROR) : Please remove any dim numbers when defining one kernel type for non-seperable inputs (i.e all inputs are non-seperable)')
+            
+            elif len(self.kern) > 1 and self.dim_label_check == "all_strings":
+                all_dim_check = contains_all_dims(check_array, self.n_inputs)
+                if all_dim_check == False:
+                    sys.exit('(ERROR) : When defining dims for seperable/non-seperable or purely seperable with multiple kernels, please ensure all dims have been included')
+            
+            elif self.dim_label_check == "strings_and_none" or self.dim_label_check == "mixed_type":
+                sys.exit('(ERROR) purely non-seperable using multiple kernels or mixed of seperable and non-seperable should all have numbers where each kernel marks a given dimension')
+        
         # scale inputs between 0 and 1
         self.X_sc = np.zeros_like(self.X)
         for i in range(self.n_inputs):
@@ -123,68 +179,69 @@ class GP_class:
 
         # Location of hypers idx
         self.hypers_idx = len(priors)
-        # Set kernel parameters
 
-        if self.non_sep:
+        # Set kernel parameters
+        if self.n_inputs == 1:
+            if self.dim_label_check == 'all_strings':
+                sys.exit('(ERROR) Dimesnion numbers are not required for 1D inputs') 
+            
             for i in range(len(self.kern)): 
                 if self.kern[i] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                     priors.extend([kern_var_prior, l_prior])
                 elif self.kern[i] == 'RAT_QUAD':
                     priors.extend([kern_var_prior, l_prior, alpha_prior])
-        else:
+        
+        elif len(self.kern) == 1 and self.non_sep:
             # All non-seperable
-            if len(self.kern) == 1:
-                label = self.kern[0].split("_NS")[0]
-                # Number of vals to compute non-seperable cov matrix
-                nvals = int(0.5*self.n_inputs*(self.n_inputs+1))
-                # Random Cholesky factors assumed to be related to lengthscale
-                if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
-                    priors.append(kern_var_prior)
-                    for i in range(nvals):
-                        priors.append(l_prior)
-                elif label == 'RAT_QUAD':
-                    priors.append(kern_var_prior)
-                    for i in range(nvals):
-                        priors.append(l_prior)
-                    priors.append(alpha_prior)
+            label = self.kern[0].split("_NS")[0]
+            # Number of vals to compute non-seperable cov matrix
+            nvals = int(0.5*self.n_inputs*(self.n_inputs+1))
+            # Random Cholesky factors assumed to be related to lengthscale
+            if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
+                priors.append(kern_var_prior)
+                for i in range(nvals):
+                    priors.append(l_prior)
+            elif label == 'RAT_QUAD':
+                priors.append(kern_var_prior)
+                for i in range(nvals):
+                    priors.append(l_prior)
+                priors.append(alpha_prior)
             
-            # Mixed (seperable and non-seperable)
-            else:
-                for i in range(len(self.kern)):
-                    check = self.kern[i].split("_NS")[0] if "_NS" in self.kern[i] else None
-                    
-                    # Seperable
-                    if check == None:
-                        dim = kernels.extract_numbers_after_kernel(self.kern[i])
-                        if len(dim) != 1:
-                            sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one number after the label, and non-seperable have two with lowest dimension first')
-                        else:
-                            if self.kern[i][:-2] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
-                                priors.extend([kern_var_prior, l_prior])
-                            elif self.kern[i][:-2] == 'RAT_QUAD':
-                                priors.extend([kern_var_prior, l_prior, alpha_prior])
-                    
-                    # Non-seperable
+        # Mixed (seperable and or non-seperable)
+        else:
+            for i in range(len(self.kern)):
+                check = self.kern[i].split("_NS")[0] if "_NS" in self.kern[i] else None
+                
+                # Seperable
+                if check == None:
+                    if self.dim_label_check == 'all_none':
+                        label = self.kern[i] 
                     else:
-                        dim = kernels.extract_numbers_after_kernel(self.kern[i])
-                        dim_check = kernels.is_ascending_string(dim)
-                        if dim_check == False:
-                            sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one number after the label, and non-seperable have two or more in ascending order')
-                        else:
-                            # Number of vals to compute non-seperable cov matrix
-                            nvals = int(0.5*len(dim)*(len(dim)+1))
-                            # Which kernel
-                            label = self.kern[i].split("_NS")[0]
-                            # Random Cholesky factors assumed to be related to lengthscale
-                            if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
-                                priors.append(kern_var_prior)
-                                for i in range(nvals):
-                                    priors.append(l_prior)
-                            elif label == 'RAT_QUAD':
-                                priors.append(kern_var_prior)
-                                for i in range(nvals):
-                                    priors.append(l_prior)
-                                priors.append(alpha_prior)
+                        label = kernels.get_kernel_label(self.kern[i])
+                     
+                    if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
+                        priors.extend([kern_var_prior, l_prior])
+                    elif label == 'RAT_QUAD':
+                        priors.extend([kern_var_prior, l_prior, alpha_prior])
+                    
+                # Non-seperable
+                else:
+                    dim = kernels.extract_numbers_after_kernel(self.kern[i])
+
+                    # Number of vals to compute non-seperable cov matrix
+                    nvals = int(0.5*len(dim)*(len(dim)+1))
+                    # Which kernel
+                    label = self.kern[i].split("_NS")[0]
+                    # Random Cholesky factors assumed to be related to lengthscale
+                    if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
+                        priors.append(kern_var_prior)
+                        for i in range(nvals):
+                            priors.append(l_prior)
+                    elif label == 'RAT_QUAD':
+                        priors.append(kern_var_prior)
+                        for i in range(nvals):
+                            priors.append(l_prior)
+                        priors.append(alpha_prior)
 
         return priors
     
@@ -238,8 +295,12 @@ class GP_class:
         # Kernel
         self.K = self.set_kernel(self.X_train, self.X_train, theta)
         self.K += np.eye(len(self.X_train)) * self.sigma_n
-        # Weights
-        self.L = np.linalg.cholesky(self.K)
+
+        try:
+            # Weights
+            self.L = np.linalg.cholesky(self.K)
+        except np.linalg.LinAlgError:
+            sys.exit('Defined kernel is NOT positive defnite, please make another kernel')
         self.weights = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.y_warp))
         
     # Predictive posterior
@@ -310,8 +371,7 @@ class GP_class:
         bounds = []
         for i in range(len(priors)):
             bounds.append((priors[i].ppf(0.01), priors[i].ppf(0.99)))
- 
-        
+
         if solver == 'diff_evo':
             # Set progress to estimate maximum time
             progress_bar = tqdm(total=max_iter, desc="Differential Evolution")
@@ -335,7 +395,7 @@ class GP_class:
                 initial = np.zeros(len(priors))
                 for i in range(len(priors)):
                     initial[i] = priors[i].rvs(1)
-                
+        
                 # Perform minimisation
                 res = minimize(self.optimise_ll(), initial,
                                bounds=tuple(bounds), method=method)
@@ -437,7 +497,7 @@ class GP_class:
     # Plotters
     #############################################################
     # Test train plots
-    def test_train_plots(self):
+    def test_train_plots(self, fname=f'test_train.png'):
         
         fig = plt.figure()
 
@@ -484,6 +544,6 @@ class GP_class:
                             wspace=0.5, 
                             hspace=0.4)
 
-        plt.savefig(f'nD_test_train.png')
+        plt.savefig(fname, bbox_inches='tight')
 
     

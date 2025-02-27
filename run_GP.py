@@ -22,27 +22,29 @@ plt.rcParams["mathtext.fontset"] = 'cm'
 ############################################################################
 # Set Data
 ############################################################################
-X = np.load('../Training Data/4D_input_model/Inputs_4D_model_1_2000.npy')
-y = np.abs(np.load('../Training Data/4D_input_model/hot_frac_4D_model_1_2000.npy'))[:,1]/100
-y+=1e-6
 
+# 1D test Data
+# X = np.load('./test_data/1D_data/input_mean.npy')[:, None]
+# y = np.load('./test_data/1D_data/output_reflect_mean.npy').flatten()
+
+# 2D test Data
+X = np.load('./test_data/2D_data/input_mean.npy')
+y = np.load('./test_data/2D_data/output_reflect_mean.npy').flatten()
 
 ############################################################################
 # Set GP model
 ############################################################################
 
-
 # Set kernel
-kern=['MATERN_3_2', 'MATERN_3_2', 'MATERN_3_2', 'MATERN_3_2']
-kern_ops = ['*', '*', '*']
+kern=['MATERN_3_2_NS_12', 'MATERN_3_2_1', "MATERN_3_2_2"]
+kern_ops = ['*', '*']
 
 # Set output warp
-ow_model=['nat_log', 'unit_var', 'sinharcsinh', 'affine', 'sinharcsinh', 'meanstd']
-# ow_model=['nat_log']
+ow_model=['nat_log', 'meanstd']
 
 # GP file (from previous training)
+# gp_file = "2D_test.pkl"
 gp_file = None
-
 # set class
 gp = GP_class(X, y, kern, kern_ops, ow_model)
 
@@ -58,8 +60,8 @@ if gp_file is not None:
     gp.read_gp_model(gp_file)
 else:
     # Optimise noise gp
-    gp.optimise_gp(solver='opt', n_restarts=6, save=True, fname="hot_frac_g100_model.pkl")
+    gp.optimise_gp(solver='opt', n_restarts=6, save=True, fname="2D_test.pkl")
 print(gp.theta)
 
 # Test train plots
-gp.test_train_plots()
+gp.test_train_plots(fname='2D_test_train.png')
