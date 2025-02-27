@@ -125,13 +125,66 @@ class GP_class:
         self.hypers_idx = len(priors)
         # Set kernel parameters
 
-        ####### ADD IN CHECK FOR SEPERABLE OR NON SEPERABLE
-        
-        for i in range(len(self.kern)): 
-            if self.kern[i] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
-                priors.extend([kern_var_prior, l_prior])
-            elif self.kern[i] == 'RAT_QUAD':
-                priors.extend([kern_var_prior, l_prior, alpha_prior])
+        if self.non_sep:
+            for i in range(len(self.kern)): 
+                if self.kern[i] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
+                    priors.extend([kern_var_prior, l_prior])
+                elif self.kern[i] == 'RAT_QUAD':
+                    priors.extend([kern_var_prior, l_prior, alpha_prior])
+        else:
+            # All non-seperable
+            if len(self.kern) == 1:
+                label = self.kern[0].split("_NS")[0]
+                # Number of vals to compute non-seperable cov matrix
+                nvals = int(0.5*self.n_inputs*(self.n_inputs+1))
+                # Random Cholesky factors assumed to be related to lengthscale
+                if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
+                    priors.append(kern_var_prior)
+                    for i in range(nvals):
+                        priors.append(l_prior)
+                elif label == 'RAT_QUAD':
+                    priors.append(kern_var_prior)
+                    for i in range(nvals):
+                        priors.append(l_prior)
+                    priors.append(alpha_prior)
+            
+            # Mixed (seperable and non-seperable)
+            else:
+                for i in range(len(self.kern)):
+                    check = self.kern[i].split("_NS")[0] if "_NS" in self.kern[i] else None
+                    
+                    # Seperable
+                    if check == None:
+                        dim = kernels.extract_numbers_after_kernel(self.kern[i])
+                        if len(dim) != 1:
+                            sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one number after the label, and non-seperable have two with lowest dimension first')
+                        else:
+                            if self.kern[i][:-2] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
+                                priors.extend([kern_var_prior, l_prior])
+                            elif self.kern[i][:-2] == 'RAT_QUAD':
+                                priors.extend([kern_var_prior, l_prior, alpha_prior])
+                    
+                    # Non-seperable
+                    else:
+                        dim = kernels.extract_numbers_after_kernel(self.kern[i])
+                        dim_check = kernels.is_ascending_string(dim)
+                        if dim_check == False:
+                            sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one number after the label, and non-seperable have two or more in ascending order')
+                        else:
+                            # Number of vals to compute non-seperable cov matrix
+                            nvals = int(0.5*len(dim)*(len(dim)+1))
+                            # Which kernel
+                            label = self.kern[i].split("_NS")[0]
+                            # Random Cholesky factors assumed to be related to lengthscale
+                            if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
+                                priors.append(kern_var_prior)
+                                for i in range(nvals):
+                                    priors.append(l_prior)
+                            elif label == 'RAT_QUAD':
+                                priors.append(kern_var_prior)
+                                for i in range(nvals):
+                                    priors.append(l_prior)
+                                priors.append(alpha_prior)
 
         return priors
     

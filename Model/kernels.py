@@ -349,7 +349,7 @@ def make_kernel_NS(kern_labels, kern_ops, X_a, X_b, hypers):
         # Set kernel
         for i in range(len(kern_labels)):
             # Check if non-seperable or not        
-            check = kern_labels[i].split("_NS")[0] if "_NS" in kern_labels else None
+            check = kern_labels[i].split("_NS")[0] if "_NS" in kern_labels[i] else None
             
             # Seperable
             if check == None:
@@ -377,17 +377,21 @@ def make_kernel_NS(kern_labels, kern_ops, X_a, X_b, hypers):
             # Non seperable
             else:
                 dim = extract_numbers_after_kernel(kern_labels[i])
-                if len(dim) > 2 and dim[0] > dim[1]:
-                    sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one number after the label, and non-seperable have two with lowest dimension first (i.e ascending order)')
+                dim_check = is_ascending_string(dim)
+
+                if dim_check == False:
+                    sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one number after the label, and non-seperable have two or more in ascending order')
                 else:
-                    
-                    X_1 = X_a[:, [int(dim[0])-1, int(dim[1])-1]]
-                    X_2 = X_b[:, [int(dim[0])-1, int(dim[1])-1]]
+                    use_dims = []
+                    for d in dim:
+                        use_dims.append(int(d)-1)
+
+                    X_1 = X_a[:, use_dims]
+                    X_2 = X_b[:, use_dims]
                     
                     # Which kernel
                     label = kern_labels[i].split("_NS")[0]
 
-                    Ncov_params = int(0.5*X_1.shape[-1]*(X_1.shape[-1]+1))
                     # Fill lower triangular matrix
                     L = np.zeros((X_1.shape[-1], X_1.shape[-1]))
                     L[np.tril_indices(X_1.shape[-1])] = hypers[idx+1:int(0.5*X_1.shape[-1]*(X_1.shape[-1]+1))+1]
@@ -431,3 +435,6 @@ def extract_numbers_after_kernel(s):
             return int(num_part) if num_part else None  # Convert to int if found
     
     return None  # Return None if no kernel is matched
+
+def is_ascending_string(s):
+    return all(s[i] <= s[i + 1] for i in range(len(s) - 1))
