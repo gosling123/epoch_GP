@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 sys.path.append("..")
-from GP_model.GP_nD_model import GP_class
+from Model.GP_model import GP_class
 
 # Plotting Params
 plt.rcParams["figure.figsize"] = (15,6)
@@ -30,6 +30,7 @@ y+=1e-6
 ############################################################################
 # Set GP model
 ############################################################################
+
 
 # Set kernel
 kern=['MATERN_3_2', 'MATERN_3_2', 'MATERN_3_2', 'MATERN_3_2']
