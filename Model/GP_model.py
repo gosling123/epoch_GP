@@ -14,19 +14,22 @@ import pickle
 
 
 
-# # Kernel Checker
-# def check_kernels(kern, kern_ops, kern_list, ops_list):
-#     if isinstance(kern, list) and all(isinstance(k, str) and k in kern_list for k in kern):
-#         if len(kern_ops) != len(kern) - 1:
-#             sys.exit('(ERROR!) : Kernel operations must have length len(kern)-1, as only n-1 operations are required for n combined kernels')
-#     else:
-#         sys.exit(f'(ERROR!) : Kernel name not valid, accepted labels are {kern_list}')
-#     if not all(op in ops_list for op in kern_ops):
-#         sys.exit(f'(ERROR!) : Kernel operation not recognised, allowed operation labels are {ops_list}')
-        
-
+# Kernel Checker
 def check_kernels(kern, kern_ops, kern_list, ops_list):
+    """
+    Check that kernel description is allowes
 
+    Parameters:
+    kern : list of str
+        Kernel label.
+    kern_ops : list of str
+        List of kernel operations.
+    kern_list : list of str
+        List of allowed kernels.
+    ops_list : list of str
+        List of allowed kernel operations ('+' or '*').
+        
+    """
     for k in kern:
         if k in kern_list:
             continue
@@ -38,8 +41,23 @@ def check_kernels(kern, kern_ops, kern_list, ops_list):
     if not all(op in ops_list for op in kern_ops):
         sys.exit(f'(ERROR!) : Kernel operation not recognised, allowed operation labels are {ops_list}')        
 
-
+# Check that all dims are included
 def contains_all_dims(strings, N):
+    """
+    Check that kernel description is allowes
+
+    Parameters:
+    kern : list of str
+        Kernel label.
+    kern_ops : list of str
+        List of kernel operations.
+    kern_list : list of str
+        List of allowed kernels.
+    ops_list : list of str
+        List of allowed kernel operations ('+' or '*').
+        
+    """
+     
     # Extract digits from all strings and convert to a set of unique numbers
     digit_set = {int(digit) for s in strings for digit in s if digit.isdigit()}
     
@@ -50,6 +68,23 @@ def contains_all_dims(strings, N):
 class GP_class:
 
     def __init__(self, X, y, kern=['RBF'], kern_ops=[], ow_model=['nat_log']):
+
+        """
+        Initialise Gaussian Process class
+
+        Parameters:
+        X : ndarray
+            Input array for training.
+        y : ndarray
+            Output array for training (Only handles single QOI output).
+        kern : list of str
+            List of kernels to use.
+        kern_ops : list of str
+            List of kernel operations.
+        ow_model : list of str
+            List of output warpings to perform.
+        
+        """
         
         # Set inputs and outputs
         self.X = X
@@ -75,9 +110,11 @@ class GP_class:
         else:
             self.non_sep = True
 
+        # Checks for various kernel descriptions
         if self.non_sep and self.n_inputs == 1:
             sys.exit('(ERROR): Cannot have non-seperable kernel for 1 input')
 
+        # Check either all have no dims defined or all have dims defined in kernel labels
         check_array = []
         for i in range(len(self.kern)):
             check_array.append(kernels.extract_numbers_after_kernel(self.kern[i]))
@@ -127,20 +164,34 @@ class GP_class:
 
     # Set test train
     def set_test_train(self, train_frac):
+        """
+        Set test train split for given fraction
+        
+        Parameters:
+        train_frac : ndarray
+            Percentage of data to train
+        
+        """
         # Extract test/train values
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X_sc , self.y, test_size=1.0-train_frac)
 
 
     # Guess priors for parameters
     def set_priors(self):
-        
+        """
+        Set priors
+
+        Returns:
+        ndarray
+            The list of parameter priors.
+
+        """
+
         # Guess of length-scale prior
         l_prior = scipy.stats.invgamma(a=2, scale=1)
-        # l_prior = scipy.stats.lognorm(s=1, scale=1)
-        
+   
         # Guess of kernel variance prior
         kern_var_prior = scipy.stats.invgamma(a=2, scale=1)
-        # kern_var_prior = scipy.stats.lognorm(s=0.75, scale=np.exp(0.56))
         
         # Guess for rational quadrtatic paramter
         alpha_prior = scipy.stats.invgamma(a=2, scale=1)
@@ -247,6 +298,21 @@ class GP_class:
     
     # input warp
     def input_warp(self, X, theta):
+        """
+        Input warping
+        
+        Parameters:
+        X : ndarray
+            Input array
+        theta : list
+            List of input warping parameters
+
+        Returns:
+        ndarray
+            Warped inputs using kumaraswamy cdf.
+
+        """
+
         # Parameters
         iw_params = theta[0:self.iw_idx]
         # Warp with kumaraswamy distribution
@@ -260,6 +326,21 @@ class GP_class:
     
     # Noise output warp
     def output_warp(self, y, theta):
+        """
+        Output warping
+        
+        Parameters:
+        y : ndarray
+            Output array
+        theta : list
+            List of output warping parameters
+
+        Returns:
+        ndarray
+            Warped outputs using user defined transforms.
+
+        """
+
         # Set class for output warping
         ow_params = theta[self.iw_idx:self.ow_idx]
         self.owc = output_warp(warpings=self.ow_model, params=ow_params, y=y)
@@ -268,7 +349,23 @@ class GP_class:
         return y_warped, jac
 
     # Get noise kernel
-    def set_kernel(self, X_a, X_b, theta):    
+    def set_kernel(self, X_a, X_b, theta):
+        """
+        Set custom kernel
+        
+        X_a : ndarray
+            First input array.
+        X_b : ndarray
+            Second input array.
+        theta : list
+            List of hyperparameters for the kernels.
+
+        Returns:
+        ndarray
+            The resulting kernel matrix.
+
+        """
+
         # Hyper-parameters
         hypers = theta[self.hypers_idx:]    
         # Warp inputs
@@ -286,12 +383,17 @@ class GP_class:
                     
     # Get noise model weights and kernel
     def update_gp(self, theta):
+        """
+        Update Gaussian Process
+        
+        theta : list
+            List of all hyperparameters.
 
+        """
         # Noise
         self.sigma_n = theta[self.ow_idx:self.hypers_idx]
         # Output warp
-        self.y_warp, self.jac = self.output_warp(self.y_train, theta)
-            
+        self.y_warp, self.jac = self.output_warp(self.y_train, theta)            
         # Kernel
         self.K = self.set_kernel(self.X_train, self.X_train, theta)
         self.K += np.eye(len(self.X_train)) * self.sigma_n
@@ -306,6 +408,21 @@ class GP_class:
     # Predictive posterior
     def posterior_predict(self, X_star, scale=False, get_var=False):
         
+        """
+        Inference at new input locations.
+
+        X_star : ndarray
+            New inputs to infer at.
+        scale : logical flag
+            Flag to re-scale output to real space (not warped space).
+        get_var : logical flag
+            Flag to output variance.
+        
+        Returns:
+        ndarray
+            The posterior predictive mean and var (if get_var=True).
+        """
+
         # Re-scale
         if scale:
             X_sc = np.zeros_like(X_star)
@@ -324,6 +441,17 @@ class GP_class:
             return mu
         
     def __posterior_predict(self, X_star):
+
+        """
+        Function to evaluate inference
+
+        X_star : ndarray
+            New inputs to infer at.
+        
+        Returns:
+        ndarray
+            The posterior predictive mean and variance
+        """
         
         # Set required GP variables
         self.update_gp(self.theta)
@@ -354,8 +482,30 @@ class GP_class:
     ###########################################################################
 
     def optimise_ll(self):
+        """
+        log likelihood optimiser function
+
+        X_star : ndarray
+            New inputs to infer at.
+        
+        Returns:
+        function
+            Log likelihood calculator
+            
+        """
         # Extract log likelihood to minimise/maximise
         def get_log_likelihood(theta):
+            """
+            log likelihood function
+
+            theta : list
+            List of all hyperparameters.
+        
+            Returns:
+            ndarray
+                Negative Log marginal likelihood
+            
+        """
             self.update_gp(theta)
             sign, logdet = np.linalg.slogdet(self.K)
             n = len(self.K.diagonal())
@@ -365,7 +515,28 @@ class GP_class:
 
     # Optimisation routine using scipy minimize optimize or differential evoloution
     def optimise_gp(self, solver='opt', n_restarts=10, method='L-BFGS-B', max_iter=5000, strategy='best1bin', tol=1e-6, save=True, fname='mean_model_nD.pkl'):
-        
+        """
+        Optimising hyperparamter routine
+
+        solver : str
+            String to set either minimize ('opt') or differential evoloution ('diff_evo') method.
+        n_restats : int
+            Number of minimize restarts to avoid local minima (for solver='opt')
+        method : str
+            Optimisation method for minimize to use (for solver='opt')
+        max_iter : int
+            Maximum number of iterations (for solver='diff_evo')
+        strategy : str
+            Differential evoloution method (for solver='diff_evo')
+        tol : float
+            Accepted tolerannce for differential evoloution method (for solver='diff_evo')
+        save : logical flag
+            Flag to make a save file with all required GP data to store
+        fname : str
+            Filename to store GP setup data to.
+            
+        """
+
         # Priors
         priors = self.set_priors()
         bounds = []
@@ -440,6 +611,14 @@ class GP_class:
     
     # Read in paramters dictionary with theta and indicies 
     def read_gp_model(self, file):
+
+        """
+        Read in GP model from previous save file.
+        
+        file : str
+            Path to file storing GP setup data.
+            
+        """
         
         with open(file, "rb") as file:
             data = pickle.load(file)
@@ -475,6 +654,22 @@ class GP_class:
     #############################################################
     def gauss_hermite_quad(self, mu, var, deg=8):
 
+        """
+        Gauss-Hermite quadrature to restore output to real space predictions.
+
+        mu : ndarray
+            Posterior predicted mean in warped space
+        var : ndarray
+            Posterior predicted variance in warped space
+        deg : int
+            Degree of Gauss-Hermite quadrature to use.
+
+        
+        Returns:
+        ndarray
+            returns the real space mean and variance
+        """
+
         # Revert back to normal output space
         x_i, w_i = np.polynomial.hermite.hermgauss(deg)
         for i in range(len(mu)):
@@ -498,6 +693,13 @@ class GP_class:
     #############################################################
     # Test train plots
     def test_train_plots(self, fname=f'test_train.png'):
+
+        """
+        Plot test-train plots for GP prediction
+
+        fname : str
+            Filename to store GP setup data to.
+        """
         
         fig = plt.figure()
 
