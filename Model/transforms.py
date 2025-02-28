@@ -1,7 +1,6 @@
 #!/bin/python3
 
 import numpy as np
-import warnings
 import sys
 
 
