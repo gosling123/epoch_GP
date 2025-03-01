@@ -24,9 +24,10 @@ plt.rcParams["mathtext.fontset"] = 'cm'
 ############################################################################
 
 # 1D test Data
-# X = np.load('./test_data/1D_data/input_mean.npy')[:, None]
+# X = np.load('./test_data/1D_data/input_mean.npy')
 # y = np.load('./test_data/1D_data/output_reflect_mean.npy').flatten()
 
+# print(X.shape())
 # 2D test Data
 X = np.load('./test_data/2D_data/input_mean.npy')
 y = np.load('./test_data/2D_data/output_reflect_mean.npy').flatten()
@@ -36,8 +37,8 @@ y = np.load('./test_data/2D_data/output_reflect_mean.npy').flatten()
 ############################################################################
 
 # Set kernel
-kern=['MATERN_3_2_NS_12', 'MATERN_3_2_1', "MATERN_3_2_2"]
-kern_ops = ['*', '*']
+kern=['MATERN_5_2_[1,1]', 'RBF_ISO_[1]' ]
+kern_ops = ['*']
 
 # Set output warp
 ow_model=['nat_log', 'meanstd']

@@ -41,30 +41,6 @@ def check_kernels(kern, kern_ops, kern_list, ops_list):
     if not all(op in ops_list for op in kern_ops):
         sys.exit(f'(ERROR!) : Kernel operation not recognised, allowed operation labels are {ops_list}')        
 
-# Check that all dims are included
-def contains_all_dims(strings, N):
-    """
-    Check that kernel description is allowes
-
-    Parameters:
-    kern : list of str
-        Kernel label.
-    kern_ops : list of str
-        List of kernel operations.
-    kern_list : list of str
-        List of allowed kernels.
-    ops_list : list of str
-        List of allowed kernel operations ('+' or '*').
-        
-    """
-     
-    # Extract digits from all strings and convert to a set of unique numbers
-    digit_set = {int(digit) for s in strings for digit in s if digit.isdigit()}
-    
-    # Check if all numbers from 1 to N are in the set
-    return set(range(1, N + 1)).issubset(digit_set)        
-
-
 class GP_class:
 
     def __init__(self, X, y, kern=['RBF'], kern_ops=[], ow_model=['nat_log']):
@@ -88,6 +64,10 @@ class GP_class:
         
         # Set inputs and outputs
         self.X = X
+
+        if self.X.ndim == 1:
+            self.X = self.X[:, None]  # Reshape (n,) to (n,1)
+
         self.n_inputs = self.X.shape[-1]
         self.n_iw_params = int(2*self.n_inputs)
         self.y = y
@@ -106,49 +86,51 @@ class GP_class:
 
         # Check if 'NS' is not present in any of the strings
         if not any('_NS' in s for s in self.kern):
-            self.non_sep = False
+            self.NS = False
         else:
-            self.non_sep = True
+            self.NS = True
 
-        # Checks for various kernel descriptions
-        if self.non_sep and self.n_inputs == 1:
-            sys.exit('(ERROR): Cannot have non-seperable kernel for 1 input')
+        # Check if 'ARD' is not present in any of the strings
+        if not any('_ARD' in s for s in self.kern):
+            self.ARD = False
+        else:
+            self.ARD = True
 
-        # Check either all have no dims defined or all have dims defined in kernel labels
+        # Check if '_ISO' is not present in any of the strings
+        if not any('_ISO' in s for s in self.kern):
+            self.ISO = False
+        else:
+            self.ISO = True
+        
         check_array = []
         for i in range(len(self.kern)):
-            check_array.append(kernels.extract_numbers_after_kernel(self.kern[i]))
+            val = kernels.extract_numbers_after_kernel(self.kern[i])
+            if val == None:
+                check_array.append(val)
+            elif isinstance(val, list) and all(isinstance(x, int) for x in val):
+                check_array.extend(val)
+            else:
+                sys.exit('(ERROR) Issue with naming. Please use the followinf form e.g RBF, RBF_ISO_[1,2..], RBF_NS, RBF_NS_[1, 2..], RBF_ARD, RBF_ARD_[1,2..]')
         self.dim_label_check = kernels.check_dim_nums(check_array)
+        print(self.dim_label_check)
         
-        if self.n_inputs > 1 and self.non_sep == False:
-            # Check if assumed seperable in ascending dimesnion order
-            if self.dim_label_check == "all_none" and self.non_sep == False:
-                if self.n_inputs != len(self.kern):
-                    sys.exit('(ERROR) : Please ensure number of kernels (kern) is equal in length to number of input parameters for purely seperable kernels\
-                                where no input number is defined')
-            
-            elif self.dim_label_check == "all_strings":
-                all_dim_check = contains_all_dims(check_array, self.n_inputs)
-                if all_dim_check == False:
-                    sys.exit('(ERROR) : When defining dims for purely seperable case please ensure all dims have been included')
-            
-            elif self.dim_label_check == "strings_and_none" or self.dim_label_check == "mixed_type":
-                sys.exit('(ERROR) purely seperable kernels should all have no numbers after kernel label,\
-                          (order is aummed ascending dimesnion), or all have numbers where each kernel marks a given dimension')
-   
-        elif self.n_inputs > 1 and self.non_sep == True:
+        check_dims = kernels.extract_numbers(self.kern)
+        if all(isinstance(x, int) and 0 <= x <= self.n_inputs for x in check_dims) == False:
+            sys.exit('(ERROR) All specified dimensions should be an integer between 1 and N_inputs')
 
-            if len(self.kern) == 1 and check_array == "all_strings":
-                sys.exit('(ERROR) : Please remove any dim numbers when defining one kernel type for non-seperable inputs (i.e all inputs are non-seperable)')
-            
-            elif len(self.kern) > 1 and self.dim_label_check == "all_strings":
-                all_dim_check = contains_all_dims(check_array, self.n_inputs)
-                if all_dim_check == False:
-                    sys.exit('(ERROR) : When defining dims for seperable/non-seperable or purely seperable with multiple kernels, please ensure all dims have been included')
-            
-            elif self.dim_label_check == "strings_and_none" or self.dim_label_check == "mixed_type":
-                sys.exit('(ERROR) purely non-seperable using multiple kernels or mixed of seperable and non-seperable should all have numbers where each kernel marks a given dimension')
+        # 1D case check
+        if self.n_inputs == 1:
+            # Checks for various kernel descriptions
+            if (self.NS or self.ISO or self.ARD):
+                sys.exit('(ERROR): Cannot have non-seperable or ARD kernel for 1 input. In 1D already isotropic so drop _ISO flag')
+            if self.dim_label_check != 'all_none':
+                sys.exit('(ERROR): 1D so no need to specify dimensions. Remove numbers list from label i.e RBF not RBF_[1,2]')
         
+        # nD case
+        else:
+            if self.dim_label_check == "all_integers" and set(range(1, self.n_inputs + 1)).issubset(set(check_dims)) == False:
+                sys.exit('(ERROR) All input dimensions should be used in kernel description')
+                
         # scale inputs between 0 and 1
         self.X_sc = np.zeros_like(self.X)
         for i in range(self.n_inputs):
@@ -232,58 +214,39 @@ class GP_class:
         self.hypers_idx = len(priors)
 
         # Set kernel parameters
-        if self.n_inputs == 1:
-            if self.dim_label_check == 'all_strings':
-                sys.exit('(ERROR) Dimesnion numbers are not required for 1D inputs') 
-            
+        if self.n_inputs == 1:      
             for i in range(len(self.kern)): 
                 if self.kern[i] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                     priors.extend([kern_var_prior, l_prior])
                 elif self.kern[i] == 'RAT_QUAD':
                     priors.extend([kern_var_prior, l_prior, alpha_prior])
-        
-        elif len(self.kern) == 1 and self.non_sep:
-            # All non-seperable
-            label = self.kern[0].split("_NS")[0]
-            # Number of vals to compute non-seperable cov matrix
-            nvals = int(0.5*self.n_inputs*(self.n_inputs+1))
-            # Random Cholesky factors assumed to be related to lengthscale
-            if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
-                priors.append(kern_var_prior)
-                for i in range(nvals):
-                    priors.append(l_prior)
-            elif label == 'RAT_QUAD':
-                priors.append(kern_var_prior)
-                for i in range(nvals):
-                    priors.append(l_prior)
-                priors.append(alpha_prior)
-            
-        # Mixed (seperable and or non-seperable)
         else:
             for i in range(len(self.kern)):
-                check = self.kern[i].split("_NS")[0] if "_NS" in self.kern[i] else None
-                
-                # Seperable
-                if check == None:
-                    if self.dim_label_check == 'all_none':
-                        label = self.kern[i] 
-                    else:
-                        label = kernels.get_kernel_label(self.kern[i])
-                     
+                k_type = kernels.kernel_type(self.kern[i])
+                label = kernels.get_kernel_label(self.kern[i])
+                dims = kernels.extract_numbers_after_kernel(self.kern[i])
+
+                if k_type in {"_ISO",  None}:
+                    # Isotropic (all dimensions, or given) or seperable with given dimensions
                     if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                         priors.extend([kern_var_prior, l_prior])
                     elif label == 'RAT_QUAD':
                         priors.extend([kern_var_prior, l_prior, alpha_prior])
-                    
-                # Non-seperable
-                else:
-                    dim = kernels.extract_numbers_after_kernel(self.kern[i])
 
-                    # Number of vals to compute non-seperable cov matrix
-                    nvals = int(0.5*len(dim)*(len(dim)+1))
-                    # Which kernel
-                    label = self.kern[i].split("_NS")[0]
-                    # Random Cholesky factors assumed to be related to lengthscale
+                elif k_type in {"_ARD", "NS"}:
+                    # One variance but seperate length-scales
+
+                    if dims == None:
+                        if k_type == "_ARD":
+                            nvals = self.n_inputs
+                        elif k_type == "_NS":
+                            nvals = int(0.5*self.n_inputs*(self.n_inputs+1))
+                    else:
+                        if k_type == "_ARD":
+                            nvals = len(dims)
+                        elif k_type == "_NS":
+                            nvals = int(0.5*len(dims)*(len(dims)+1))
+
                     if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                         priors.append(kern_var_prior)
                         for i in range(nvals):
@@ -373,12 +336,10 @@ class GP_class:
         X_b = self.input_warp(X_b, theta)
 
         # Make kernel
-        if self.n_inputs == 1 and self.non_sep == False:
+        if self.n_inputs == 1:
             K = kernels.make_kernel(self.kern, self.kern_ops, X_a, X_b, hypers)
-        elif self.n_inputs > 1 and self.non_sep == False:
+        elif self.n_inputs > 1:
             K = kernels.make_kernel_nD(self.kern, self.kern_ops, X_a, X_b, hypers)
-        elif self.non_sep == True:
-            K = kernels.make_kernel_NS(self.kern, self.kern_ops, X_a, X_b, hypers)
         return K
                     
     # Get noise model weights and kernel
@@ -422,6 +383,9 @@ class GP_class:
         ndarray
             The posterior predictive mean and var (if get_var=True).
         """
+
+        if X_star.shape[-1] != self.X_train.shape[-1]:
+            sys.exit('(ERROR) : Number of inputs at new locations does match that of the training data')
 
         # Re-scale
         if scale:

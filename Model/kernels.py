@@ -9,7 +9,7 @@ import sys
 # Basic kernels
 ######################################################
 
-def matern_kernel(X_a, X_b, hyper_param=[1, 1], nu=1.5):
+def matern_kernel(X_a, X_b, hyper_param=[1, 1], nu=1.5, ARD=False):
     """
     Computes the Matern Kernel for inputs X_a and X_b.
     
@@ -22,6 +22,8 @@ def matern_kernel(X_a, X_b, hyper_param=[1, 1], nu=1.5):
         List of hyperparameters [variance, length-scale]. Default is [1, 1].
     nu : float, optional
         Smoothness parameter. Default is 1.5.
+    ARD : logical flag
+        Use ARD detection (seperate length scales per dimesnion need hyper_param have len(N_iputs) + 1)
 
     Returns:
     ndarray
@@ -33,22 +35,76 @@ def matern_kernel(X_a, X_b, hyper_param=[1, 1], nu=1.5):
     
     # Exponential kernel
     if nu == 0.5:
-        return hyper_param[0] * np.exp(-dist / hyper_param[1])
+        if ARD == True:
+            K = hyper_param[0]
+            for i in range(X_a.shape[-1]):
+                # Inputs 
+                X_1 = X_a[:,i][:,None]
+                X_2 = X_b[:,i][:,None]
+                # Euclidean distance
+                dist = scipy.spatial.distance.cdist(X_1, X_2, metric='euclidean')
+                
+                K *= np.exp(-dist / hyper_param[i+1])
+            return K                
+        else:
+            return hyper_param[0] * np.exp(-dist / hyper_param[1])
+    
     # Matern 3_2
     elif nu == 1.5:
-        factor = np.sqrt(3) * dist / hyper_param[1]
-        return hyper_param[0] * (1 + factor) * np.exp(-factor)
+        if ARD == True:
+            K = hyper_param[0]
+            for i in range(X_a.shape[-1]):
+                # Inputs 
+                X_1 = X_a[:,i][:,None]
+                X_2 = X_b[:,i][:,None]
+                # Euclidean distance
+                dist = scipy.spatial.distance.cdist(X_1, X_2, metric='euclidean')
+                
+                factor = np.sqrt(3) * dist / hyper_param[i+1]
+                K *= ((1 + factor) * np.exp(-factor))
+            return K                
+        else:
+            factor = np.sqrt(3) * dist / hyper_param[1]
+            return hyper_param[0] * (1 + factor) * np.exp(-factor)
+    
     # Matern 5_2
     elif nu == 2.5:
-        factor = np.sqrt(5) * dist / hyper_param[1]
-        return hyper_param[0] * (1 + factor + (5 * dist ** 2) / (3 * hyper_param[1] ** 2)) * np.exp(-factor)
+        if ARD == True:
+            K = hyper_param[0]
+            for i in range(X_a.shape[-1]):
+                # Inputs 
+                X_1 = X_a[:,i][:,None]
+                X_2 = X_b[:,i][:,None]
+                # Euclidean distance
+                dist = scipy.spatial.distance.cdist(X_1, X_2, metric='euclidean')
+                
+                factor = np.sqrt(5) * dist / hyper_param[i+1]
+                K *= ((1 + factor + (5 * dist ** 2) / (3 * hyper_param[i+1] ** 2)) * np.exp(-factor))
+            return K       
+        else:
+            factor = np.sqrt(5) * dist / hyper_param[1]
+            return hyper_param[0] * (1 + factor + (5 * dist ** 2) / (3 * hyper_param[1] ** 2)) * np.exp(-factor)
+    
     # General
     else:
-        factor = (np.sqrt(2 * nu) * dist) / hyper_param[1]
-        return hyper_param[0] * (2 ** (1 - nu) / gamma(nu)) * (factor ** nu) * kv(nu, factor) if dist > 0 else 1.0
+        if ARD == True:
+            K = hyper_param[0]
+            for i in range(X_a.shape[-1]):
+                # Inputs 
+                X_1 = X_a[:,i][:,None]
+                X_2 = X_b[:,i][:,None]
+                # Euclidean distance
+                dist = scipy.spatial.distance.cdist(X_1, X_2, metric='euclidean')
+                
+                factor = (np.sqrt(2 * nu) * dist) / hyper_param[i+1]
+                K *= ((2 ** (1 - nu) / gamma(nu)) * (factor ** nu) * kv(nu, factor) if dist > 0 else 1.0)
+            return K
+        else:
+            factor = (np.sqrt(2 * nu) * dist) / hyper_param[1]
+            return hyper_param[0] * (2 ** (1 - nu) / gamma(nu)) * (factor ** nu) * kv(nu, factor) if dist > 0 else 1.0
 
 
-def rbf_kernel(X_a, X_b, hyper_param=[1, 1]):
+def rbf_kernel(X_a, X_b, hyper_param=[1, 1], ARD=False):
     """
     Computes the radial basis function kernel for inputs X_a and X_b.
     
@@ -59,6 +115,8 @@ def rbf_kernel(X_a, X_b, hyper_param=[1, 1]):
         Second input array.
     hyper_param : list, optional
         List of hyperparameters [variance, length-scale]. Default is [1, 1].
+    ARD : logical flag
+        Use ARD detection (seperate length scales per dimesnion need hyper_param have len(N_iputs) + 1)
 
     Returns:
     ndarray
@@ -67,10 +125,23 @@ def rbf_kernel(X_a, X_b, hyper_param=[1, 1]):
     
     # Square Euclidean distance
     sqdist = scipy.spatial.distance.cdist(X_a, X_b, metric='sqeuclidean')
-    return hyper_param[0] * np.exp(-0.5 * sqdist / hyper_param[1]**2)
+
+    if ARD == True:
+            K = hyper_param[0]
+            for i in range(X_a.shape[-1]):
+                # Inputs 
+                X_1 = X_a[:,i][:,None]
+                X_2 = X_b[:,i][:,None]
+                # Euclidean distance
+                sqdist = scipy.spatial.distance.cdist(X_1, X_2, metric='sqeuclidean')
+                
+                K *= np.exp(-0.5 * sqdist / hyper_param[i+1]**2) 
+            return K
+    else:
+        return hyper_param[0] * np.exp(-0.5 * sqdist / hyper_param[1]**2)
 
 
-def rat_quad_kernel(X_a, X_b, hyper_param=[1, 1, 1]):
+def rat_quad_kernel(X_a, X_b, hyper_param=[1, 1, 1], ARD=False):
     """
     Computes the rational quadratic kernel for inputs X_a and X_b.
     
@@ -81,6 +152,8 @@ def rat_quad_kernel(X_a, X_b, hyper_param=[1, 1, 1]):
         Second input array.
     hyper_param : list, optional
         List of hyperparameters [variance, length-scale, alpha]. Default is [1, 1, 1].
+    ARD : logical flag
+        Use ARD detection (seperate length scales per dimesnion need hyper_param have len(N_iputs) + 2)
 
     Returns:
     ndarray
@@ -88,7 +161,19 @@ def rat_quad_kernel(X_a, X_b, hyper_param=[1, 1, 1]):
     """
     
     sqdist = scipy.spatial.distance.cdist(X_a, X_b, metric='sqeuclidean')
-    return hyper_param[0] * (1.0 + 0.5*sqdist/hyper_param[1]**2/hyper_param[2])**(-1.0*hyper_param[2])
+    if ARD == True:
+            K = hyper_param[0]
+            for i in range(X_a.shape[-1]):
+                # Inputs 
+                X_1 = X_a[:,i][:,None]
+                X_2 = X_b[:,i][:,None]
+                # Euclidean distance
+                sqdist = scipy.spatial.distance.cdist(X_1, X_2, metric='sqeuclidean')
+                
+                K *= (1.0 + 0.5*sqdist/hyper_param[i+1]**2/hyper_param[-1])**(-1.0*hyper_param[-1])
+            return K
+    else:
+        return hyper_param[0] * (1.0 + 0.5*sqdist/hyper_param[1]**2/hyper_param[2])**(-1.0*hyper_param[2])
 
 
 ######################################################
@@ -253,8 +338,7 @@ def make_kernel(kern_labels, kern_ops, X_a, X_b, hypers):
 
 def make_kernel_nD(kern_labels, kern_ops, X_a, X_b, hypers):
     """
-    Make kernel from either one or a combination of kernels for the case of
-    separable nD inputs.
+    Make kernel from either one or a combination of kernels for the case of nD inputs.
     
     Parameters:
     kern_labels : list of str
@@ -278,216 +362,275 @@ def make_kernel_nD(kern_labels, kern_ops, X_a, X_b, hypers):
 
     check_array = []
     for i in range(len(kern_labels)):
-        check_array.append(extract_numbers_after_kernel(kern_labels[i]))
+        val = extract_numbers_after_kernel(kern_labels[i])
+        if val == None:
+            check_array.append(val)
+        elif isinstance(val, list) and all(isinstance(x, int) for x in val):
+            check_array.extend(val)
+        else:
+            sys.exit('(ERROR) Issue with naming. Please use the followinf form e.g RBF, RBF_ISO_[1,2..], RBF_NS, RBF_NS_[1, 2..], RBF_ARD, RBF_ARD_[1,2..]')
     check = check_dim_nums(check_array)
 
-    if check == "strings_and_none" or check == "mixed_type":
-        sys.exit('(ERROR) purely seperable kernels should all have no numbers after kernel label,\
-                  (order is aummed ascending dimesnion), or all have numbers where each kernel marks a given dimension')
-   
-    elif check == "all_none":
-        # Set kernel assuming labels are for ascending dimesnion number
-        for i in range(len(kern_labels)):
-            X_1 = X_a[:,i]
-            X_2 = X_b[:,i]
-            if kern_labels[i] == 'RBF':
-                K_i = rbf_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2])
-                idx += 2
-            elif kern_labels[i] == 'EXP':
-                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=0.5) 
-                idx += 2
-            elif kern_labels[i] == 'MATERN_3_2':
-                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=1.5)
-                idx += 2 
-            elif kern_labels[i] == 'MATERN_5_2':
-                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=2.5)
-                idx += 2
-            elif kern_labels[i] == 'RAT_QUAD':
-                K_i = rat_quad_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+3])
-                idx += 3
-            
-            if i == 0:
-                kernel = K_i
-            else:
-                if kern_ops[i-1] == '*':
-                    kernel *= K_i
-                elif kern_ops[i-1] == '+':
-                    kernel += K_i
+    check_dims = extract_numbers(kern_labels)
+    if all(isinstance(x, int) and 0 <= x <= X_a.shape[-1] for x in check_dims) == False:
+        sys.exit('(ERROR) All specified dimensions should be an integer between 1 and N_inputs')
     
-    elif check == "all_strings":
-        # Set kernel where numbers after string define chosen dimesnions
-        for i in range(len(kern_labels)):
-            dims = extract_numbers_after_kernel(kern_labels[i])
-            label = get_kernel_label(kern_labels[i])
-            
-            if len(dims) == 1:
-                X_1 = X_a[:,int(dims)-1]
-                X_2 = X_b[:,int(dims)-1]
-            elif len(dims) == 2:
-                X_1 = X_a[:,int(dims[0])-1]
-                X_2 = X_b[:,int(dims[1])-1]
-            elif len(dims) > 2:
-                sys.exit('(ERROR) : If using kernel to compute across dimesnions then only 2 numbers should be given after kernel label')
-            
-            
-            if label == 'RBF':
-                K_i = rbf_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2])
-                idx += 2
-            elif label == 'EXP':
-                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=0.5) 
-                idx += 2
-            elif label == 'MATERN_3_2':
-                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=1.5)
-                idx += 2 
-            elif label == 'MATERN_5_2':
-                K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=2.5)
-                idx += 2
-            elif label == 'RAT_QUAD':
-                K_i = rat_quad_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+3])
-                idx += 3
-            
-            if i == 0:
-                kernel = K_i
-            else:
-                if kern_ops[i-1] == '*':
-                    kernel *= K_i
-                elif kern_ops[i-1] == '+':
-                    kernel += K_i
+    ###########################################################################
+    # Either isotropic or non-seperable (No dims so across all dimensions)
+    ###########################################################################
+
+    if check == "all_none":
+        non_sep = check_NS(kern_labels)
+        ard = check_ARD(kern_labels)
+        isotropic = check_ISO(kern_labels)
+
+        if isotropic:
+            sys.exit('(ERROR) To define isotopic along all dimensions remove _IS flag in kernel labels. The _IS flag is only for using certain dimesnions, given by the numbers after the flag.')
+
+        # All kernels are isotropic (correctly labelled) across all dims so can handle like 1D
+        elif non_sep == False and ard == False:
+            kernel = make_kernel(kern_labels, kern_ops, X_a, X_b, hypers)
     
-    
-    return kernel
-
-
-def make_kernel_NS(kern_labels, kern_ops, X_a, X_b, hypers):
-    """
-    Make kernel from either one or a combination of non-separable kernels.
-
-    Parameters:
-    kern_labels : list of str
-        List of kernel labels ('RBF', 'EXP', 'MATERN_3_2', 'MATERN_5_2', 'RAT_QUAD').
-    kern_ops : list of str
-        List of kernel operations ('+' or '*').
-    X_a : ndarray
-        First input array.
-    X_b : ndarray
-        Second input array.
-    hypers : list
-        List of hyperparameters for the kernels.
-
-    Returns:
-    ndarray
-        The resulting combined non-separable kernel matrix.
-    """
-     
-    if len(kern_labels) == 1:
-        # Which kernel
-        label = kern_labels[0].split("_NS")[0]
-
-        # Fill lower triangular matrix
-        L = np.zeros((X_a.shape[-1], X_a.shape[-1]))
-        if label == 'RAT_QUAD':
-            L[np.tril_indices(X_a.shape[-1])] = hypers[1:-1]
+        # Can be all or mixture of non-seperable, ARD and isotropic (across all or subset)
         else:
-            L[np.tril_indices(X_a.shape[-1])] = hypers[1:] 
-        
-        # Compute inverse covariance
-        Lambda = np.dot(L, L.T)
-        Lambda_inv = np.linalg.inv(Lambda)
-
-        if label == 'RBF':
-            kernel = rbf_kernel_NS(X_a, X_b, hypers[0], Lambda_inv)
-        elif label == 'EXP':
-            kernel = matern_kernel_NS(X_a, X_b, hypers[0], Lambda_inv, nu=0.5)
-        elif label == 'MATERN_3_2':
-            kernel = matern_kernel_NS(X_a, X_b, hypers[0], Lambda_inv, nu=1.5)
-        elif label == 'MATERN_5_2':
-            kernel = matern_kernel_NS(X_a, X_b, hypers[0], Lambda_inv, nu=2.5)
-        elif label == 'RAT_QUAD':
-            kernel = rat_quad_kernel_NS(X_a, X_b, hypers[0], Lambda_inv, hypers[-1])
-    
-    else:
-        idx = 0
-        # Set kernel
-        for i in range(len(kern_labels)):
-            # Check if non-seperable or not        
-            check = kern_labels[i].split("_NS")[0] if "_NS" in kern_labels[i] else None
-            
-            # Seperable
-            if check == None:
-                dims = extract_numbers_after_kernel(kern_labels[i])
+            for i in range(len(kern_labels)):
+                # Check kernel type
+                k_type = kernel_type(kern_labels[i])
                 label = get_kernel_label(kern_labels[i])
-                
-                if len(dims) == 1:
-                    X_1 = X_a[:,int(dims)-1]
-                    X_2 = X_b[:,int(dims)-1]
-                elif len(dims) == 2:
-                    X_1 = X_a[:,int(dims[0])-1]
-                    X_2 = X_b[:,int(dims[1])-1]
-                if len(dim) > 2:
-                    sys.exit('(ERROR): If using a mix of seperbale and non-sperable, then make sure seperable only has one or two numbers after the label,\
-                             whilst non-seperable kernels have at least 2')
-                
-                if label == 'RBF':
-                    K_i = rbf_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2])
-                    idx += 2
-                elif label == 'EXP':
-                    K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=0.5) 
-                    idx += 2
-                elif label == 'MATERN_3_2':
-                    K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=1.5)
-                    idx += 2 
-                elif label == 'MATERN_5_2':
-                    K_i = matern_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+2], nu=2.5)
-                    idx += 2
-                elif label == 'RAT_QUAD':
-                    K_i = rat_quad_kernel(X_1[:,None], X_2[:,None], hyper_param=hypers[idx:idx+3])
-                    idx += 3
-            
-            # Non seperable
-            else:
-                dim = extract_numbers_after_kernel(kern_labels[i])
-                use_dims = []
-                for d in dim:
-                    use_dims.append(int(d)-1)
-                X_1 = X_a[:, use_dims]
-                X_2 = X_b[:, use_dims]
+                # Isotropic or ARD
+                if k_type == None or k_type == '_ARD':
                     
-                # Which kernel
-                label = kern_labels[i].split("_NS")[0]
-                # Fill lower triangular matrix
-                L = np.zeros((X_1.shape[-1], X_1.shape[-1]))
-                L[np.tril_indices(X_1.shape[-1])] = hypers[idx+1:int(0.5*X_1.shape[-1]*(X_1.shape[-1]+1))+1]
-                # Compute inverse covariance
-                Lambda = np.dot(L, L.T)
-                Lambda_inv = np.linalg.inv(Lambda)
+                    # Isotropic across all dimensions
+                    if k_type == None:
+                        flag = False
+                        param_move = 2 # Variance and length-scale
+                    else:
+                        flag = True
+                        param_move = X_a.shape[-1] + 1 # Variance and length-scales
+                    
+                    if label == 'RBF':
+                        K_i = rbf_kernel(X_a, X_b, hyper_param=hypers[idx:idx+param_move], ARD=flag)
+                        idx += param_move
+                    elif label == 'EXP':
+                        K_i = matern_kernel(X_a, X_b, hyper_param=hypers[idx:idx+param_move], nu=0.5, ARD=flag) 
+                        idx += param_move
+                    elif label == 'MATERN_3_2':
+                        K_i = matern_kernel(X_a, X_b, hyper_param=hypers[idx:idx+param_move], nu=1.5, ARD=flag)
+                        idx += param_move
+                    elif label == 'MATERN_5_2':
+                        K_i = matern_kernel(X_a, X_b, hyper_param=hypers[idx:idx+param_move], nu=2.5, ARD=flag)
+                        idx += param_move
+                    elif label == 'RAT_QUAD':
+                        K_i = rat_quad_kernel(X_a, X_b, hyper_param=hypers[idx:idx+param_move+1], ARD=flag)
+                        idx += param_move + 1 # Will be +1 for RAT_QUAD beacuse of alpha
+                    else:
+                        sys.exit(f'(ERROR) Kernel label is not recognised {label}')
+        
+                # Non-seperable case
+                elif k_type == '_NS':
+                    
+                    # How many hyper-parameters to move afterwards for next part
+                    param_move = int(0.5*X_a.shape[-1]*(X_a.shape[-1]+1))
 
-                if label == 'RBF':
-                    K_i = rbf_kernel_NS(X_1, X_2, hypers[idx], Lambda_inv)
-                    idx += int(X_1.shape[-1]*(X_1.shape[-1]+1)/2) + 1 
-                elif label == 'EXP':
-                    K_i = matern_kernel_NS(X_1, X_2, hypers[idx], Lambda_inv, nu=0.5)
-                    idx += int(X_1.shape[-1]*(X_1.shape[-1]+1)/2) + 1 
-                elif label == 'MATERN_3_2':
-                    K_i = matern_kernel_NS(X_1, X_2, hypers[idx], Lambda_inv, nu=1.5)
-                    idx += int(X_1.shape[-1]*(X_1.shape[-1]+1)/2) + 1 
-                elif label == 'MATERN_5_2':
-                    K_i = matern_kernel_NS(X_1, X_2, hypers[idx], Lambda_inv, nu=2.5)
-                    idx += int(X_1.shape[-1]*(X_1.shape[-1]+1)/2) + 1
-                elif label == 'RAT_QUAD':
-                    K_i = rat_quad_kernel_NS(X_1, X_2, hypers[idx], Lambda_inv, hypers[int(0.5*X_1.shape[-1]*(X_1.shape[-1]+1))+1])
-                    idx += int(X_1.shape[-1]*(X_1.shape[-1]+1)/2) + 2    
+                    # Fill lower triangular matrix
+                    L = np.zeros((X_a.shape[-1], X_a.shape[-1]))
+                    L[np.tril_indices(X_a.shape[-1])] = hypers[idx+1:param_move+1]
+                    # Compute inverse covariance
+                    Lambda = np.dot(L, L.T)
+                    Lambda_inv = np.linalg.inv(Lambda)
+     
+                    if label == 'RBF':
+                        K_i = rbf_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv)
+                        idx += param_move + 1
+                    elif label == 'EXP':
+                        K_i = matern_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv, nu=0.5)
+                        idx += param_move + 1
+                    elif label == 'MATERN_3_2':
+                        K_i = matern_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv, nu=1.5)
+                        idx += param_move + 1
+                    elif label == 'MATERN_5_2':
+                        K_i = matern_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv, nu=2.5)
+                        idx += param_move + 1
+                    elif label == 'RAT_QUAD':
+                        K_i = rat_quad_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv, hypers[idx+param_move+1])
+                        idx += param_move + 2
+                    else:
+                        sys.exit(f'(ERROR) Kernel label is not recognised {label}')   
 
-            if i == 0:
-                kernel = K_i
-            else:
-                if kern_ops[i-1] == '*':
-                    kernel *= K_i
-                elif kern_ops[i-1] == '+':
-                    kernel += K_i
+                # Apply operations
+                if i == 0:
+                    kernel = K_i
+                else:
+                    if kern_ops[i-1] == '*':
+                        kernel *= K_i
+                    elif kern_ops[i-1] == '+':
+                        kernel += K_i
+
+        
     
+    #############################################################################################
+    # Either all Mixture of isotropic, non-seperable, seperable (either dimension specific or not)
+    #############################################################################################
+
+    elif check == "integers_and_none" or check == "all_integers":
+        if check == "all_integers" and set(range(1, X_a.shape[-1] + 1)).issubset(set(check_dims)) == False:
+            sys.exit('(ERROR) All input dimensions should be used in kernel description')
+        else:
+            for i in range(len(kern_labels)):   
+                # Check kernel type
+                k_type = kernel_type(kern_labels[i])
+                label = get_kernel_label(kern_labels[i])
+                dims = extract_numbers_after_kernel(kern_labels[i])
+                # Isotropic over-all dimesnions or only a select few
+                if k_type in {"_ISO", "_ARD", None}:
+
+                    if k_type == None:
+                        flag = False
+                        param_move = 2
+                        # Full isotropic
+                        if dims == None:
+                            X_1 = X_a
+                            X_2 = X_a
+                        # Seperable with given dimensions
+                        elif len(dims) == 1:
+                            X_1 = X_a[:,dims[0]-1][:,None]
+                            X_2 = X_b[:,dims[0]-1][:,None]
+                        elif len(dims) == 2:
+                            X_1 = X_a[:,dims[0]-1][:,None]
+                            X_2 = X_b[:,dims[1]-1][:,None]
+                        elif len(dims) > 2:
+                            sys.exit('(ERROR) : If using seperable kernel to compute across dimesnions then only 2 numbers should be given after kernel label')
+
+                    elif k_type == "_ISO":
+                        flag = False
+                        param_move = 2
+                        if len(dims) == 1:
+                            sys.exit('(ERROR) If using isotropic key (_ISO) then please ensure no dimesnions are given, or more than 1 are e.g _ISO_[1, 2, ..],  where len(arr) > 1.')
+                        elif len(dims) == len(set(dims)) == False:
+                            sys.exit('(ERROR) Repated dimension in isotropic kernel description, believes remove repated value.')
+                        elif len(dims) > X_a.shape[-1]:
+                            sys.exit('(ERROR) Cannot specify more input dimensions than there are.')
+                        elif dims == None:
+                            X_1 = X_a
+                            X_2 = X_b 
+                        else:
+                            use_dims = []
+                            for d in dims:
+                                use_dims.append(d-1)
+                            X_1 = X_a[:, use_dims]
+                            X_2 = X_b[:, use_dims]
+    
+                    elif k_type == "_ARD":
+                        flag = True
+                        if len(dims) == 1:
+                            sys.exit('(ERROR) If using ARD key (_ARD) then please ensure no dimesnions are given, or more than 1 are e.g _ARD_[1, 2, ..],  where len(arr) > 1.')
+                        elif len(dims) == len(set(dims)) == False:
+                            sys.exit('(ERROR) Repated dimension in isotropic kernel description, believes remove repated value.')
+                        elif len(dims) > X_a.shape[-1]:
+                            sys.exit('(ERROR) Cannot specify more input dimensions than there are.')
+                        elif dims == None:
+                            X_1 = X_a
+                            X_2 = X_b 
+                            param_move = X_1.shape[-1] + 1 
+                        else:
+                            use_dims = []
+                            for d in dims:
+                                use_dims.append(d-1)
+                            X_1 = X_a[:, use_dims]
+                            X_2 = X_b[:, use_dims]
+                            param_move = X_1.shape[-1] + 1 
+                    
+                    if label == 'RBF':
+                        K_i = rbf_kernel(X_1, X_2, hyper_param=hypers[idx:idx+param_move], ARD=flag)
+                        idx += param_move
+                    elif label == 'EXP':
+                        K_i = matern_kernel(X_1, X_2, hyper_param=hypers[idx:idx+param_move], nu=0.5, ARD=flag) 
+                        idx += param_move
+                    elif label == 'MATERN_3_2':
+                        K_i = matern_kernel(X_1, X_2, hyper_param=hypers[idx:idx+param_move], nu=1.5, ARD=flag)
+                        idx += param_move
+                    elif label == 'MATERN_5_2':
+                        K_i = matern_kernel(X_1, X_2, hyper_param=hypers[idx:idx+param_move], nu=2.5, ARD=flag)
+                        idx += param_move
+                    elif label == 'RAT_QUAD':
+                        K_i = rat_quad_kernel(X_1, X_2, hyper_param=hypers[idx:idx+param_move+1], ARD=flag)
+                        idx += param_move + 1 # Will be +1 for RAT_QUAD beacuse of alpha
+                    else:
+                        sys.exit(f'(ERROR) Kernel label is not recognised {label}')
+                
+                elif k_type == '_NS':
+
+                    if dims == None:
+                        X_1 = X_a
+                        X_2 = X_b
+                    else:
+                        use_dims = []
+                        for d in dims:
+                            use_dims.append(d-1)
+                        X_1 = X_a[:, use_dims]
+                        X_2 = X_b[:, use_dims]
+                    
+                    # How many hyper-parameters to move afterwards for next part
+                    param_move = int(0.5*X_1.shape[-1]*(X_1.shape[-1]+1))
+
+                    # Fill lower triangular matrix
+                    L = np.zeros((X_1.shape[-1], X_1.shape[-1]))
+                    L[np.tril_indices(X_1.shape[-1])] = hypers[idx+1:param_move+1]
+                    # Compute inverse covariance
+                    Lambda = np.dot(L, L.T)
+                    Lambda_inv = np.linalg.inv(Lambda)
+     
+                    if label == 'RBF':
+                        K_i = rbf_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv)
+                        idx += param_move + 1
+                    elif label == 'EXP':
+                        K_i = matern_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv, nu=0.5)
+                        idx += param_move + 1
+                    elif label == 'MATERN_3_2':
+                        K_i = matern_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv, nu=1.5)
+                        idx += param_move + 1
+                    elif label == 'MATERN_5_2':
+                        K_i = matern_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv, nu=2.5)
+                        idx += param_move + 1
+                    elif label == 'RAT_QUAD':
+                        K_i = rat_quad_kernel_NS(X_a, X_b, hypers[idx], Lambda_inv, hypers[idx+param_move+1])
+                        idx += param_move + 2
+                    else:
+                        sys.exit(f'(ERROR) Kernel label is not recognised {label}')
+
+                # Apply operations
+                if i == 0:
+                    kernel = K_i
+                else:
+                    if kern_ops[i-1] == '*':
+                        kernel *= K_i
+                    elif kern_ops[i-1] == '+':
+                        kernel += K_i
+    else:
+        sys.exit('(ERROR) Naming of kernels is incorrect')
+
     return kernel
+                        
 
+################################################################
+# Check functions
+################################################################
 
+def check_NS(kern_arr):
+    return any("_NS" in s for s in kern_arr)
+
+def check_ARD(kern_arr):
+    return any("_ARD" in s for s in kern_arr)
+
+def check_ISO(kern_arr):
+    return any("_ISO" in s for s in kern_arr)
+
+def kernel_type(kernel_str):
+    keywords = ["_NS", "_ARD", "_ISO"]
+    for keyword in keywords:
+        if keyword in kernel_str:
+            return keyword 
+    return None
 
 def get_kernel_label(kernel_str):
     kernels=('RBF', 'EXP', 'MATERN_3_2', 'MATERN_5_2', 'RAT_QUAD')
@@ -497,25 +640,45 @@ def get_kernel_label(kernel_str):
     return None  # Return None if no match is found
 
 def extract_numbers_after_kernel(s):
-    kernels = ('RBF', 'EXP', 'MATERN_3_2', 'MATERN_5_2', 'RAT_QUAD')
-    
-    for kernel in kernels:
-        if s.startswith(kernel):  # Check if string starts with a known kernel
-            num_part = "".join(char for char in s[len(kernel):] if char.isdigit())
-            return num_part if num_part else None  # Convert to int if found
-    
-    return None  # Return None if no kernel is matched
+    if "[" in s and "]" in s:
+        # Extract substring inside brackets
+        s = s[s.index("[") + 1 : -1]
+        # Split and convert to integers
+        return [int(num) for num in s.split(",") if num.strip().isdigit()]
+    return None
 
 def check_dim_nums(lst):
     if all(item is None for item in lst):
         return "all_none"
-    elif all(isinstance(item, str) for item in lst):
-        return "all_strings"
-    elif all(isinstance(item, str) or item is None for item in lst):
-        return "strings_and_none"
+    elif all(isinstance(item, int) for item in lst):
+        return "all_integers"
+    elif all(isinstance(item, int) or item is None for item in lst):
+        return "integers_and_none"
     else:
         return "mixed_types"
 
 
-# def is_ascending_string(s):
-#     return all(s[i] <= s[i + 1] for i in range(len(s) - 1))
+def extract_numbers(arr):
+    exclusions = ['EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF', 'RAT_QUAD']
+    numbers = []
+
+    for item in arr:
+        # Check if any exclusion phrase is part of the item
+        for exclusion in exclusions:
+            if exclusion in item:
+                # If exclusion phrase found, remove any numbers attached to it
+                item = item.replace(exclusion, '')  # Remove the exclusion phrase entirely
+        
+        # Now, extract numbers from the remaining part of the item
+        num = ''
+        for char in item:
+            if char.isdigit():
+                num += char  # Build the number as a string
+            elif num:
+                numbers.append(int(num))  # Convert and store when non-digit appears
+                num = ''
+        if num:  # Add the last number if it exists
+            numbers.append(int(num))
+
+    return numbers
+
