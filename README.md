@@ -141,12 +141,7 @@ where `\epsilon` ensures numerical stability and allows predictions slightly bey
 
 Standard Gaussian processes assume Gaussian-distributed outputs, which may not always hold. Output warping transforms outputs to better fit this assumption. Common transformations include:
 
-| Transformation   | Forward Map `\phi(y, \theta_{ow})` | Inverse `\phi^{-1}(\tilde{y}, \theta_{ow})`              | Jacobian `d\phi/dy`                                |                                     |                    |           |         |   |          |
-| ---------------- | ---------------------------------- | -------------------------------------------------------- | -------------------------------------------------- | ----------------------------------- | ------------------ | --------- | ------- | - | -------- |
-| **Affine**       | `a y + b`                          | `(\tilde{y} - b)/a`                                      | `a`                                                |                                     |                    |           |         |   |          |
-| **Log**          | `\ln(y)`                           | `\exp(\tilde{y})`                                        | `1/y`                                              |                                     |                    |           |         |   |          |
-| **Box-Cox**      | \`(\text{sgn}(y)                   | y                                                        | ^{a-1} - 1)/(a-1)\`                                | \`(\text{sgn}((a-1)\tilde{y} +1))/( | (a-1)\tilde{y} + 1 | ^{a-1})\` | \`(a-1) | y | ^{a-2}\` |
-| **Sinh-Arcsinh** | `\sinh(b\sinh^{-1}y -a)`           | `\sinh\left(\frac{\sinh^{-1}(\tilde{y}) - a}{b} \right)` | `\frac{b \cosh(b \sinh^{-1}y -a)}{\sqrt{1 + y^2}}` |                                     |                    |           |         |   |          |
+
 
 ### Composite Output Warping
 
@@ -158,3 +153,164 @@ For high-dimensional problems, a single transformation may not be sufficient. Co
 
 Affine transformations are typically included to standardize the output to zero mean and unit variance. If a nonzero mean function is used, the Affine transform parameters can be adjusted accordingly.
 
+## Input Warping
+
+Gaussian processes assume a stationary covariance function, but real-world functions often vary across input space. Input warping adapts to such variations. This implementation uses the Kumaraswamy distribution:
+
+```math
+F(x, \theta_{iw}) = 1 - (1 - x^a)^b,
+```
+
+where `a` and `b` are transformation parameters, learned alongside kernel hyperparameters. Inputs must be between `[0,1]`, so we first apply an affine transformation:
+
+```math
+\tilde{x} = \frac{x - x_{min}}{x_{max} - x_{min}} + \epsilon,
+```
+
+where `\epsilon` ensures numerical stability and allows predictions slightly beyond the training domain.
+
+## Output Warping
+
+Standard Gaussian processes assume Gaussian-distributed outputs, which may not always hold. Output warping transforms outputs to better fit this assumption. Common transformations include:
+
+- **Affine Transformation**: Scales and shifts the output:
+  ```math
+  \phi(y) = a y + b
+  ```
+  Inverse: 
+  ```math
+  \phi^{-1}(\tilde{y}) = \frac{\tilde{y} - b}{a}
+  ```
+  Jacobian: 
+  ```math
+  \frac{d\phi}{dy} = a
+  ```
+
+- **Logarithmic Transformation**: Useful for positive outputs:
+  ```math
+  \phi(y) = \ln(y)
+  ```
+  Inverse: 
+  ```math
+  \phi^{-1}(\tilde{y}) = \exp(\tilde{y})
+  ```
+  Jacobian: 
+  ```math
+  \frac{d\phi}{dy} = \frac{1}{y}
+  ```
+
+- **Box-Cox Transformation**: Handles skewed data:
+  ```math
+  \phi(y) = \frac{\text{sgn}(y)|y|^{a-1} - 1}{a-1}
+  ```
+  Inverse: 
+  ```math
+  \phi^{-1}(\tilde{y}) = \text{sgn}((a-1)\tilde{y} +1) |(a-1)\tilde{y} + 1|^{1/(a-1)}
+  ```
+  Jacobian: 
+  ```math
+  \frac{d\phi}{dy} = (a-1)|y|^{a-2}
+  ```
+
+- **Sinh-Arcsinh Transformation**: Adjusts tail behavior:
+  ```math
+  \phi(y) = \sinh(b\sinh^{-1}y -a)
+  ```
+  Inverse: 
+  ```math
+  \phi^{-1}(\tilde{y}) = \sinh\left(\frac{\sinh^{-1}(\tilde{y}) - a}{b} \right)
+  ```
+  Jacobian: 
+  ```math
+  \frac{d\phi}{dy} = \frac{b \cosh(b \sinh^{-1}y -a)}{\sqrt{1 + y^2}}
+  ```
+
+### Composite Output Warping
+
+For high-dimensional problems, a single transformation may not be sufficient. Composite warping applies multiple transformations in sequence:
+
+```math
+\tilde{y} = \phi_n(\phi_{n-1}(\phi_{n-2}(...), \theta_{n-1}), \theta_n).
+```
+
+Affine transformations are typically included to standardize the output to zero mean and unit variance. If a nonzero mean function is used, the Affine transform parameters can be adjusted accordingly.
+
+#### GP Inference
+
+Given the training data \( (X, y) \), the posterior mean and variance at test points \( X^* \) are computed as follows:
+
+- **Posterior Mean**:
+
+  \[
+  \mu(\tilde{X}^*) = \mathbf{K}(\tilde{X}^*, \tilde{X})\left[\mathbf{K}(\tilde{X}, \tilde{X}) + \sigma^2_{n}\mathbf{I}\right]^{-1}\mathbf{\tilde{y}}
+  \]
+
+- **Posterior Variance**:
+
+  \[
+  \text{Var}(\tilde{X}^*) = \mathbf{K}(\tilde{X}^*, \tilde{X}) - \mathbf{K}(\tilde{X}^*, \tilde{X})\left[\mathbf{K}(\tilde{X}, \tilde{X}) + \sigma^2_{n}\mathbf{I}\right]^{-1}\mathbf{K}(\tilde{X}, \tilde{X}^*)
+  \]
+
+Here, \( K \) denotes the kernel matrix, and \( \tilde{X} = F(X, \theta_{iw}) \) and \( \tilde{y} = \phi(y, \theta_{ow}) \). 
+
+To improve numerical stability, Cholesky decomposition is applied to avoid matrix inversion:
+
+\[
+\mathbf{L}\mathbf{L}^{T} = \mathbf{K}(\tilde{X}, \tilde{X}) + \sigma_n^2\mathbf{I}
+\]
+
+where \( \mathbf{L} \) is a lower triangular matrix. From this, we define the weights \( \alpha \) as:
+
+\[
+\mathbf{\alpha} = \left[\mathbf{K}(\tilde{X}, \tilde{X}) + \sigma_n^2\mathbf{I}\right]^{-1} \tilde{\mathbf{y}} \quad \rightarrow \quad \alpha = \mathbf{L}^T \backslash (\mathbf{L} \backslash \mathbf{y})
+\]
+
+Thus, the mean becomes:
+
+\[
+\mu(X^{\star}) = \mathbf{K}(\tilde{X}^*, \tilde{X})\mathbf{\alpha}
+\]
+
+Similarly, for variance:
+
+\[
+\mathbf{v} = \mathbf{L} \backslash \mathbf{K}(\tilde{X}, \tilde{X}^*) \quad \rightarrow \quad \text{Var}(\tilde{X}^*) = \mathbf{K}(\tilde{X}^*, \tilde{X}^*) - \mathbf{v}^T\mathbf{v}
+\]
+
+Finally, the predictions are converted back to the original output space (non-warped), using Gaussian quadrature to approximate the integral:
+
+\[
+\mathbb{E}\left[y^n\right] = \int_{-\infty}^{\infty} (\phi^{-1}(\tilde{y}))^{n}f_{\tilde{y}}(\tilde{y}) \mathrm{d}\tilde{y}
+\]
+
+where \( w_i \) and \( \beta_i \) are the Gaussian quadrature weights and nodes, respectively. The mean and variance are computed by evaluating \( \mathbb{E}\left[y\right] \) and \( \mathbb{E}\left[y^2\right] - \mathbb{E}\left[y\right]^2 \).
+
+---
+
+#### Log Marginal Likelihood Optimization
+
+The kernel hyperparameters are optimized by maximizing the log marginal likelihood, which is computationally done by minimizing the negative log marginal likelihood. To ensure the optimization is done in the original space (even when using warped data), we perform a change of variables on the probability density:
+
+\[
+f_{y}(y) = f_{\tilde{y}}(\tilde{y}) \left|\frac{\mathrm{d}\tilde{y}}{\mathrm{d}y}\right|
+\]
+
+The log marginal likelihood is then defined as:
+
+\[
+\log \mathbb{P}(y | X) = -\frac{1}{2} \tilde{\mathbf{y}}^T \left[ \mathbf{K}(\tilde{X}, \tilde{X}) + \sigma^2_{n} \mathbf{I} \right]^{-1} \tilde{\mathbf{y}} 
+- \frac{1}{2} \log \left|\left[ \mathbf{K}(\tilde{X}, \tilde{X}) + \sigma^2_{n} \mathbf{I} \right]^{-1}\right| 
+- \frac{n}{2} \log 2\pi 
++ \sum_{i=1}^{n} \log{\left(\left|\frac{\mathrm{d}\tilde{y}}{\mathrm{d}y}\right|\right)}
+\]
+
+This optimization is typically performed using `scipy.minimize` with the L-BFGS-B method or `scipy.optimize.differential_evolution` for stochastic global optimization. The differential evolution method requires more function evaluations and is better suited for problems with fewer hyperparameters. For the `minimize` function, multiple restarts are recommended to avoid local minima. Performance can be improved by defining the derivative of the log marginal likelihood, though this is not yet implemented.
+
+--- 
+
+## References
+
+- [Input-Warping](https://arxiv.org/pdf/1402.0929)
+- [Output-Warping](https://arxiv.org/abs/1906.09665>)
+- [scipy.optimize.minimize](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html)
+- [scipy.optimize.differential_evolution](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.differential_evolution.html)
