@@ -249,7 +249,7 @@ Similarly, for variance:
 Finally, the predictions are converted back to the original output space (non-warped), using Gaussian quadrature to approximate the integral:
 
   ```math
-\mathbb{E}\left[y^n\right] = \int_{-\infty}^{\infty} (\phi^{-1}(\tilde{y}))^{n}f_{\tilde{y}}(\tilde{y}) \mathrm{d}\tilde{y}
+\mathbb{E}\left[y^n\right] = \int_{-\infty}^{\infty} (\phi^{-1}(\tilde{y}))^{n}f_{\tilde{y}}(\tilde{y}) \mathrm{d}\tilde{y} \approx \frac{1}{\sqrt{\pi}}\sum_{i=1}^{k}w_i \phi^{-1}\left(\sqrt{2}\sigma_{\tilde{y},i}\beta_i + \mu_{\tilde{y}, i}\right)^{n}
 ```
 
 where $w_i$ and $\beta_i$ are the Gaussian quadrature weights and nodes, respectively. The mean and variance are computed by evaluating $\mathbb{E}\left[y\right]$ and $\mathbb{E}\left[y^2\right] - \mathbb{E}\left[y\right]^2$.
