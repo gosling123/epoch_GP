@@ -173,7 +173,26 @@ class GP_hetscedat_class:
             sys.exit('(ERROR) : ow_noise must be set to None for no warping, or a list of allowed opeartions given by the strngs affine,nat_log, boxcox, sinharcsinh, meanstd,\
                    zero_mean, unit_var')
 
-       
+    def rescale_X(self, X_sc):
+        """
+        Return re-scaled version from 0, 1 scale
+        
+        Parameters:
+        X_sc : ndarray
+            Scaled inputs
+        
+        Returns:
+        ndarray
+            Inputs in original space.
+        
+        """
+        # re-scale inputs
+        X = np.zeros_like(X_sc)
+        for i in range(self.n_inputs):
+            sc = zero_one_scale(eps=0.01, x_max=np.max(self.X[:,i]), x_min=np.min(self.X[:,i]))
+            X[:,i] = sc.inverse(X_sc[:,i])
+        return X
+           
     #############################################################
     # GP model
     #############################################################
@@ -184,8 +203,10 @@ class GP_hetscedat_class:
         Set test train split for given fraction
         
         Parameters:
-        train_frac : ndarray
-            Percentage of data to train
+        train_mean : ndarray
+            Percentage of data to train mean data on
+        train_noise : ndarray
+            Percentage of data to train noise data on
         
         """
         # Extract test/train values
@@ -197,6 +218,9 @@ class GP_hetscedat_class:
     def set_priors(self, model):
         """
         Set priors
+
+        model : str
+            String flag to set GP on mean or variance (noise) model data
 
         Returns:
         ndarray
@@ -332,6 +356,8 @@ class GP_hetscedat_class:
             Input array
         theta : list
             List of input warping parameters
+        model : str
+            String flag to set GP on mean or variance (noise) model data
 
         Returns:
         ndarray
@@ -364,6 +390,8 @@ class GP_hetscedat_class:
             Output array
         theta : list
             List of output warping parameters
+        model : str
+            String flag to set GP on mean or variance (noise) model data
 
         Returns:
         ndarray
@@ -398,6 +426,8 @@ class GP_hetscedat_class:
             Second input array.
         theta : list
             List of hyperparameters for the kernels.
+        model : str
+            String flag to set GP on mean or variance (noise) model data
 
         Returns:
         ndarray
@@ -434,6 +464,8 @@ class GP_hetscedat_class:
         
         theta : list
             List of all hyperparameters.
+        model : str
+            String flag to set GP on mean or variance (noise) model data
 
         """
 
@@ -472,11 +504,6 @@ class GP_hetscedat_class:
             sys.exit('Defined kernel is NOT positive defnite, please make another kernel')
         self.weights = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.y_warp))
     
-
-            #############################################
-            # FORM HERE (ON TRAIN)
-            #############################################
-
     # Predictive posterior
     def posterior_predict(self, X_star, model, scale=False, get_var=False):
         
@@ -485,6 +512,8 @@ class GP_hetscedat_class:
 
         X_star : ndarray
             New inputs to infer at.
+        model : str
+            String flag to set GP on mean or variance (noise) model data
         scale : logical flag
             Flag to re-scale output to real space (not warped space).
         get_var : logical flag
@@ -494,6 +523,9 @@ class GP_hetscedat_class:
         ndarray
             The posterior predictive mean and var (if get_var=True).
         """
+
+        if X_star.ndim == 1:
+            X_star = X_star[:, None]  # Reshape (n,) to (n,1)
 
         if X_star.shape[-1] != self.n_inputs:
             sys.exit('(ERROR) : Number of inputs at new locations does match that of the training data')
@@ -529,6 +561,8 @@ class GP_hetscedat_class:
 
         X_star : ndarray
             New inputs to infer at.
+        model : str
+            String flag to set GP on mean or variance (noise) model data
         
         Returns:
         ndarray
@@ -609,6 +643,8 @@ class GP_hetscedat_class:
         """
         Optimising hyperparamter routine
 
+        model : str
+            String flag to set GP on mean or variance (noise) model data
         solver : str
             String to set either minimize ('opt') or differential evoloution ('diff_evo') method.
         n_restats : int
@@ -665,7 +701,7 @@ class GP_hetscedat_class:
                 res = minimize(self.optimise_ll(), initial,
                                bounds=tuple(bounds), method=method)
             
-                print(f'restart {n} = {res.fun}')
+                print(f'restart {n+1} = {res.fun}')
             
                 # Accept first value
                 if n == 0:
@@ -733,6 +769,8 @@ class GP_hetscedat_class:
         
         file : str
             Path to file storing GP setup data.
+        model : str
+            String flag to set GP on mean or variance (noise) model data
             
         """
         
@@ -795,6 +833,8 @@ class GP_hetscedat_class:
             Posterior predicted mean in warped space
         var : ndarray
             Posterior predicted variance in warped space
+        model : str
+            String flag to set GP on mean or variance (noise) model data
         deg : int
             Degree of Gauss-Hermite quadrature to use.
 
@@ -833,6 +873,8 @@ class GP_hetscedat_class:
         """
         Plot test-train plots for GP prediction
 
+        model : str
+            String flag to set GP on mean or variance (noise) model data
         fname : str
             Filename to store GP setup data to.
         """

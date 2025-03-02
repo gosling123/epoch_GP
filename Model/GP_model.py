@@ -149,7 +149,28 @@ class GP_class:
             sys.exit('(ERROR) : ow_model must be set to None for no warping, or a list of allowed opeartions given by the strngs affine,nat_log, boxcox, sinharcsinh, meanstd,\
                    zero_mean, unit_var')
 
-       
+
+     
+    def rescale_X(self, X_sc):
+        """
+        Return re-scaled version from 0, 1 scale
+        
+        Parameters:
+        X_sc : ndarray
+            Scaled inputs
+        
+        Returns:
+        ndarray
+            Inputs in original space.
+        
+        """
+        # re-scale inputs
+        X = np.zeros_like(X_sc)
+        for i in range(self.n_inputs):
+            sc = zero_one_scale(eps=0.01, x_max=np.max(self.X[:,i]), x_min=np.min(self.X[:,i]))
+            X[:,i] = sc.inverse(X_sc[:,i])
+        return X
+    
     #############################################################
     # GP model
     #############################################################
@@ -406,6 +427,9 @@ class GP_class:
             The posterior predictive mean and var (if get_var=True).
         """
 
+        if X_star.ndim == 1:
+            X_star = X_star[:, None]  # Reshape (n,) to (n,1)
+
         if X_star.shape[-1] != self.X_train.shape[-1]:
             sys.exit('(ERROR) : Number of inputs at new locations does match that of the training data')
 
@@ -555,7 +579,7 @@ class GP_class:
                 res = minimize(self.optimise_ll(), initial,
                                bounds=tuple(bounds), method=method)
             
-                print(f'restart {n} = {res.fun}')
+                print(f'restart {n+1} = {res.fun}')
             
                 # Accept first value
                 if n == 0:
