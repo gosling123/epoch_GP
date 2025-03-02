@@ -141,19 +141,19 @@ where `\epsilon` ensures numerical stability and allows predictions slightly bey
 
 Standard Gaussian processes assume Gaussian-distributed outputs, which may not always hold. Output warping transforms outputs to better fit this assumption. Common transformations include:
 
-| Transformation | Forward Map `\phi(y, \theta_{ow})` | Inverse `\phi^{-1}(\tilde{y}, \theta_{ow})`              | Jacobian `d\phi/dy`                                |                                                                  |         |   |          |
-| -------------- | ---------------------------------- | -------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- | ------- | - | -------- |
-| Affine         | `a y + b`                          | `(\tilde{y} - b)/a`                                      | `a`                                                |                                                                  |         |   |          |
-| Log            | `\ln(y)`                           | `\exp(\tilde{y})`                                        | `1/y`                                              |                                                                  |         |   |          |
-| Box-Cox        | \`\frac{\text{sgn}(y)              | y                                                        | ^{a-1} - 1}{a-1}\`                                 | `\frac{\text{sgn}((a-1)\tilde{y} +1)}{(a-1)\tilde{y} + 1}^{a-1}` | \`(a-1) | y | ^{a-2}\` |
-| Sinh-Arcsinh   | `\sinh(b\sinh^{-1}y -a)`           | `\sinh\left(\frac{\sinh^{-1}(\tilde{y}) - a}{b} \right)` | `\frac{b \cosh(b \sinh^{-1}y -a)}{\sqrt{1 + y^2}}` |                                                                  |         |   |          |
+| Transformation   | Forward Map `\phi(y, \theta_{ow})` | Inverse `\phi^{-1}(\tilde{y}, \theta_{ow})`              | Jacobian `d\phi/dy`                                |                                     |                    |           |         |   |          |
+| ---------------- | ---------------------------------- | -------------------------------------------------------- | -------------------------------------------------- | ----------------------------------- | ------------------ | --------- | ------- | - | -------- |
+| **Affine**       | `a y + b`                          | `(\tilde{y} - b)/a`                                      | `a`                                                |                                     |                    |           |         |   |          |
+| **Log**          | `\ln(y)`                           | `\exp(\tilde{y})`                                        | `1/y`                                              |                                     |                    |           |         |   |          |
+| **Box-Cox**      | \`(\text{sgn}(y)                   | y                                                        | ^{a-1} - 1)/(a-1)\`                                | \`(\text{sgn}((a-1)\tilde{y} +1))/( | (a-1)\tilde{y} + 1 | ^{a-1})\` | \`(a-1) | y | ^{a-2}\` |
+| **Sinh-Arcsinh** | `\sinh(b\sinh^{-1}y -a)`           | `\sinh\left(\frac{\sinh^{-1}(\tilde{y}) - a}{b} \right)` | `\frac{b \cosh(b \sinh^{-1}y -a)}{\sqrt{1 + y^2}}` |                                     |                    |           |         |   |          |
 
 ### Composite Output Warping
 
 For high-dimensional problems, a single transformation may not be sufficient. Composite warping applies multiple transformations in sequence:
 
 ```math
-\tilde{y} = w_n(w_{n-1}(w_{n-2}(...), \theta_{n-1}), \theta_n).
+\tilde{y} = \phi_n(\phi_{n-1}(\phi_{n-2}(...), \theta_{n-1}), \theta_n).
 ```
 
 Affine transformations are typically included to standardize the output to zero mean and unit variance. If a nonzero mean function is used, the Affine transform parameters can be adjusted accordingly.
