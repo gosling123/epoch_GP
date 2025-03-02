@@ -78,7 +78,7 @@ A kernel using multiple dimensions for a 2D model:
 kern = ['RBF_[1]', 'RBF_[2]', 'RBF_[1,2]']
 kern_ops = ['*', '*']
 ```
-where the last kernel defines an RBF kernel where `X` is only defined in the first input dimension and `X'` on the second.
+where the last kernel defines an RBF kernel where $X$ is only defined in the first input dimension and $X'$ on the second.
 
 ### Summation Kernels
 
@@ -103,7 +103,7 @@ A non-separable kernel based on the Mahalanobis distance:
 ```math
 d_M(x,x')=\sqrt{(x - x')^T \Lambda^{-1} (x - x')}
 ```
-where `\Lambda` is the covariance matrix (positive definite), and `\Lambda^{-1}` accounts for feature correlations.
+where $\Lambda$ is the covariance matrix (positive definite), and $\Lambda^{-1}$ accounts for feature correlations.
 
 For the RBF kernel:
 ```math
@@ -113,7 +113,7 @@ Defined in code as:
 * `kern = ['RBF_NS']` - Non-separable across all input dimensions.
 * `kern = ['RBF_NS_[1,2,3]']` - Non-separable across input dimensions 1, 2, and 3 only.
 
-During optimisation, we assume `\Lambda = LL^{T}`, so only the lower triangular elements are optimised.
+During optimisation, we assume $\Lambda = LL^{T}$, so only the lower triangular elements are optimised.
 
 ### Combinations
 
@@ -129,45 +129,14 @@ Gaussian processes assume a stationary covariance function, but real-world funct
 F(x, \theta_{iw}) = 1 - (1 - x^a)^b,
 ```
 
-where `a` and `b` are transformation parameters, learned alongside kernel hyperparameters. Inputs must be between `[0,1]`, so we first apply an affine transformation:
+where $a$ and $b$ are transformation parameters, learned alongside kernel hyperparameters. Inputs must be between $[0,1]$, so we first apply an affine transformation:
 
 ```math
 \tilde{x} = \frac{x - x_{min}}{x_{max} - x_{min}} + \epsilon,
 ```
 
-where `\epsilon` ensures numerical stability and allows predictions slightly beyond the training domain.
+where $\epsilon$ ensures numerical stability and allows predictions slightly beyond the training domain.
 
-## Output Warping
-
-Standard Gaussian processes assume Gaussian-distributed outputs, which may not always hold. Output warping transforms outputs to better fit this assumption. Common transformations include:
-
-
-
-### Composite Output Warping
-
-For high-dimensional problems, a single transformation may not be sufficient. Composite warping applies multiple transformations in sequence:
-
-```math
-\tilde{y} = \phi_n(\phi_{n-1}(\phi_{n-2}(...), \theta_{n-1}), \theta_n).
-```
-
-Affine transformations are typically included to standardize the output to zero mean and unit variance. If a nonzero mean function is used, the Affine transform parameters can be adjusted accordingly.
-
-## Input Warping
-
-Gaussian processes assume a stationary covariance function, but real-world functions often vary across input space. Input warping adapts to such variations. This implementation uses the Kumaraswamy distribution:
-
-```math
-F(x, \theta_{iw}) = 1 - (1 - x^a)^b,
-```
-
-where `a` and `b` are transformation parameters, learned alongside kernel hyperparameters. Inputs must be between `[0,1]`, so we first apply an affine transformation:
-
-```math
-\tilde{x} = \frac{x - x_{min}}{x_{max} - x_{min}} + \epsilon,
-```
-
-where `\epsilon` ensures numerical stability and allows predictions slightly beyond the training domain.
 
 ## Output Warping
 
@@ -235,9 +204,9 @@ For high-dimensional problems, a single transformation may not be sufficient. Co
 
 Affine transformations are typically included to standardize the output to zero mean and unit variance. If a nonzero mean function is used, the Affine transform parameters can be adjusted accordingly.
 
-#### GP Inference
+## GP Inference
 
-Given the training data \( (X, y) \), the posterior mean and variance at test points \( X^* \) are computed as follows:
+Given the training data $(X, y)$, the posterior mean and variance at test points $X^*$ are computed as follows:
 
 - **Posterior Mean**:
 
@@ -251,7 +220,7 @@ Given the training data \( (X, y) \), the posterior mean and variance at test po
   \text{Var}(\tilde{X}^*) = \mathbf{K}(\tilde{X}^*, \tilde{X}) - \mathbf{K}(\tilde{X}^*, \tilde{X})\left[\mathbf{K}(\tilde{X}, \tilde{X}) + \sigma^2_{n}\mathbf{I}\right]^{-1}\mathbf{K}(\tilde{X}, \tilde{X}^*)
   ```
 
-Here, `K` denotes the kernel matrix, and `\tilde{X} = F(X, \theta_{iw})` and ` \tilde{y} = \phi(y, \theta_{ow})`. 
+Here, $K$ denotes the kernel matrix, and $\tilde{X} = F(X, \theta_{iw})$ and $\tilde{y} = \phi(y, \theta_{ow})$. 
 
 To improve numerical stability, Cholesky decomposition is applied to avoid matrix inversion:
 
@@ -259,7 +228,7 @@ To improve numerical stability, Cholesky decomposition is applied to avoid matri
 \mathbf{L}\mathbf{L}^{T} = \mathbf{K}(\tilde{X}, \tilde{X}) + \sigma_n^2\mathbf{I}
 ```
 
-where \( \mathbf{L} \) is a lower triangular matrix. From this, we define the weights \( \alpha \) as:
+where $\mathbf{L}$ is a lower triangular matrix. From this, we define the weights $\alpha$ as:
 
   ```math
 \mathbf{\alpha} = \left[\mathbf{K}(\tilde{X}, \tilde{X}) + \sigma_n^2\mathbf{I}\right]^{-1} \tilde{\mathbf{y}} \quad \rightarrow \quad \alpha = \mathbf{L}^T \backslash (\mathbf{L} \backslash \mathbf{y})
@@ -283,11 +252,11 @@ Finally, the predictions are converted back to the original output space (non-wa
 \mathbb{E}\left[y^n\right] = \int_{-\infty}^{\infty} (\phi^{-1}(\tilde{y}))^{n}f_{\tilde{y}}(\tilde{y}) \mathrm{d}\tilde{y}
 ```
 
-where $w_i$ and \( \beta_i \) are the Gaussian quadrature weights and nodes, respectively. The mean and variance are computed by evaluating \( \mathbb{E}\left[y\right] \) and \( \mathbb{E}\left[y^2\right] - \mathbb{E}\left[y\right]^2 \).
+where $w_i$ and $\beta_i$ are the Gaussian quadrature weights and nodes, respectively. The mean and variance are computed by evaluating $\mathbb{E}\left[y\right]$ and $\mathbb{E}\left[y^2\right] - \mathbb{E}\left[y\right]^2$.
 
 ---
 
-#### Log Marginal Likelihood Optimization
+## Log Marginal Likelihood Optimization
 
 The kernel hyperparameters are optimized by maximizing the log marginal likelihood, which is computationally done by minimizing the negative log marginal likelihood. To ensure the optimization is done in the original space (even when using warped data), we perform a change of variables on the probability density:
 
