@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 sys.path.append("..")
-from Model.GP_model import GP_class
+from Model.GP_het_scedat import GP_hetscedat_class
 
 # Plotting Params
 plt.rcParams["figure.figsize"] = (15,6)
@@ -23,30 +23,26 @@ plt.rcParams["mathtext.fontset"] = 'cm'
 # Set Data
 ############################################################################
 
-# 1D test Data
-# X = np.load('./test_data/1D_data/input_mean.npy')
-# y = np.load('./test_data/1D_data/output_reflect_mean.npy').flatten()
-
-# print(X.shape())
 # 2D test Data
 X = np.load('./test_data/2D_data/input_mean.npy')
 y = np.load('./test_data/2D_data/output_reflect_mean.npy').flatten()
-
-# print(X.shape)
-# 4D test Data
-# X = np.load('./test_data/4D_data/Inputs_4D_model_1_2000.npy')
-# y = np.abs(np.load('./test_data/4D_data/R_bsrs_4D_model_1_2000.npy').flatten())
+y_var = np.load('./test_data/2D_data/output_reflect_var.npy').flatten()
 
 ############################################################################
 # Set GP model
 ############################################################################
 
 # Set kernel
-kern=['MATERN_5_2_NS']
+kern=['MATERN_5_2']
 kern_ops = []
 
+kern_var=['MATERN_5_2']
+kern_var_ops = []
+
 # Set output warp
-ow_model=['nat_log', 'unit_var', 'sinharcsinh', 'meanstd']
+ow_model=['nat_log', 'meanstd']
+
+ow_noise=['nat_log', 'meanstd']
 
 # Input warp 
 iw = True
@@ -55,22 +51,43 @@ iw = True
 # gp_file = "2D_test.pkl"
 gp_file = None
 # set class
-gp = GP_class(X, y, kern, kern_ops, iw, ow_model)
+gp =  GP_hetscedat_class(X, y, y_var, kern, kern_ops,  kern_var, kern_var_ops, iw, ow_model, ow_noise)
 
-if gp_file == None:
-    # set test and train split
-    gp.set_test_train(train_frac=0.75)
+# set test and train split
+gp.set_test_train(train_mean=0.7, train_noise=0.7)
 
 ######################################################
-# GP model train/prediction
+# Noise Model
 ######################################################
 
-if gp_file is not None:
-    gp.read_gp_model(gp_file)
+noise_theta_file = None
+
+if noise_theta_file is not None:
+    theta = np.load(noise_theta_file)
+    gp.set_theta(theta, model='noise')
 else:
     # Optimise noise gp
-    gp.optimise_gp(solver='opt', n_restarts=6, save=True, fname="2D_test.pkl")
+     gp.optimise_gp(model='noise', solver='opt', n_restarts=5)
+
+print(gp.theta_noise)
+
+# Test train plots
+gp.test_train_plots(model='noise', fname='noise_plot.png')
+
+
+######################################################
+# Main Model
+######################################################
+theta_file = None
+
+if theta_file is not None:
+    theta = np.load(theta_file)
+    gp.set_theta(theta, model='mean')
+else:
+    # Optimise noise gp
+     gp.optimise_gp(model='mean', solver='opt', n_restarts=5)
+
 print(gp.theta)
 
 # Test train plots
-gp.test_train_plots(fname='2D_test_train.png')
+gp.test_train_plots(model='mean', fname='mean_plot.png')
