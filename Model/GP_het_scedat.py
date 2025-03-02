@@ -41,26 +41,35 @@ def check_kernels(kern, kern_ops, kern_list, ops_list):
     if not all(op in ops_list for op in kern_ops):
         sys.exit(f'(ERROR!) : Kernel operation not recognised, allowed operation labels are {ops_list}')        
 
-class GP_class:
+class GP_hetscedat_class:
 
-    def __init__(self, X, y, kern=['RBF'], kern_ops=[], iw=True, ow_model=['nat_log']):
+    def __init__(self, X, y, y_var, kern=['RBF'], kern_ops=[],  kern_var=['EXP'], kern_var_ops=[],\
+                  iw=True, ow_model=['nat_log'], ow_noise=['nat_log']):
 
         """
-        Initialise Gaussian Process class
+        Initialise Gaussian Process (heteroscedatic) class
 
         Parameters:
         X : ndarray
             Input array for training.
         y : ndarray
             Output array for training (Only handles single QOI output).
+        y_var : ndarray
+            Output array for training input noise variance
         kern : list of str
             List of kernels to use.
         kern_ops : list of str
             List of kernel operations.
+        kern_var : list of str
+            List of kernels to use (for variance model).
+        kern_var_ops : list of str
+            List of kernel operations (for variance model).
         iw : logical flag
             Flag to turn input warping on or off
         ow_model : list of str
             List of output warpings to perform.
+        ow_noise : list of str
+            List of output warpings to perform (for variance model).
         
         """
         
@@ -74,6 +83,7 @@ class GP_class:
         if iw :
             self.n_iw_params = int(2*self.n_inputs)
         self.y = y
+        self.y_var = y_var
 
         # set allowed kernel lists
         self.kern_list = ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF', 'RAT_QUAD')
@@ -82,57 +92,64 @@ class GP_class:
         # set kernel description
         self.kern = kern # mean model
         self.kern_ops = kern_ops
+        self.kern_var = kern_var # variance model
+        self.kern_var_ops = kern_var_ops
         
         # check kernels
         check_kernels(self.kern, self.kern_ops, self.kern_list, self.ops_list)
         print('y model kernel description accepted')
+        check_kernels(self.kern_var, self.kern_var_ops, self.kern_list, self.ops_list)
+        print('y_var model kernel description accepted')
 
-        # Check if 'NS' is not present in any of the strings
-        if not any('_NS' in s for s in self.kern):
-            NS = False
-        else:
-            NS = True
-
-        # Check if 'ARD' is not present in any of the strings
-        if not any('_ARD' in s for s in self.kern):
-            ARD = False
-        else:
-            ARD = True
-
-        # Check if '_ISO' is not present in any of the strings
-        if not any('_ISO' in s for s in self.kern):
-            ISO = False
-        else:
-            ISO = True
-        
-        check_array = []
-        for i in range(len(self.kern)):
-            val = kernels.extract_numbers_after_kernel(self.kern[i])
-            if val == None:
-                check_array.append(val)
-            elif isinstance(val, list) and all(isinstance(x, int) for x in val):
-                check_array.extend(val)
+        for kerns in (self.kern, self.kern_var):
+            # Check if 'NS' is not present in any of the strings
+            if not any('_NS' in s for s in kerns):
+                NS = False
             else:
-                sys.exit('(ERROR) Issue with naming. Please use the following form e.g RBF, RBF_ISO_[1,2..], RBF_NS, RBF_NS_[1, 2..], RBF_ARD, RBF_ARD_[1,2..]')
-        self.dim_label_check = kernels.check_dim_nums(check_array)
-        
-        check_dims = kernels.extract_numbers(self.kern)
-        if all(isinstance(x, int) and 0 <= x <= self.n_inputs for x in check_dims) == False:
-            sys.exit('(ERROR) All specified dimensions should be an integer between 1 and N_inputs')
+                NS = True
 
-        # 1D case check
-        if self.n_inputs == 1:
-            # Checks for various kernel descriptions
-            if (NS or ISO or ARD):
-                sys.exit('(ERROR): Cannot have non-seperable or ARD kernel for 1 input. In 1D already isotropic so drop _ISO flag')
-            if self.dim_label_check != 'all_none':
-                sys.exit('(ERROR): 1D so no need to specify dimensions. Remove numbers list from label i.e RBF not RBF_[1,2]')
+            # Check if 'ARD' is not present in any of the strings
+            if not any('_ARD' in s for s in kerns):
+                ARD = False
+            else:
+                ARD = True
+
+            # Check if '_ISO' is not present in any of the strings
+            if not any('_ISO' in s for s in kerns):
+                ISO = False
+            else:
+                ISO = True
+  
+            check_array = []
+            for i in range(len(kerns)):
+                val = kernels.extract_numbers_after_kernel(kerns[i])
+                if val == None:
+                    check_array.append(val)
+                elif isinstance(val, list) and all(isinstance(x, int) for x in val):
+                    check_array.extend(val)
+                else:
+                    sys.exit('(ERROR) Issue with naming. Please use the following form e.g RBF, RBF_ISO_[1,2..], RBF_NS, RBF_NS_[1, 2..], RBF_ARD, RBF_ARD_[1,2..]')
+            
+            self.dim_label_check = kernels.check_dim_nums(check_array)
         
-        # nD case
-        else:
-            if self.dim_label_check == "all_integers" and set(range(1, self.n_inputs + 1)).issubset(set(check_dims)) == False:
-                sys.exit('(ERROR) All input dimensions should be used in kernel description')
+            check_dims = kernels.extract_numbers(kerns)
+            if all(isinstance(x, int) and 0 <= x <= self.n_inputs for x in check_dims) == False:
+                sys.exit('(ERROR) All specified dimensions should be an integer between 1 and N_inputs')
+
+            # 1D case check
+            if self.n_inputs == 1:
+                # Checks for various kernel descriptions
+                if (NS or ISO or ARD):
+                    sys.exit('(ERROR): Cannot have non-seperable or ARD kernel for 1 input. In 1D already isotropic so drop _ISO flag')
+                if self.dim_label_check != 'all_none':
+                    sys.exit('(ERROR): 1D so no need to specify dimensions. Remove numbers list from label i.e RBF not RBF_[1,2]')
+        
+            # nD case
+            else:
+                if self.dim_label_check == "all_integers" and set(range(1, self.n_inputs + 1)).issubset(set(check_dims)) == False:
+                    sys.exit('(ERROR) All input dimensions should be used in kernel description')
                 
+        
         # scale inputs between 0 and 1
         self.X_sc = np.zeros_like(self.X)
         for i in range(self.n_inputs):
@@ -148,6 +165,13 @@ class GP_class:
         else:
             sys.exit('(ERROR) : ow_model must be set to None for no warping, or a list of allowed opeartions given by the strngs affine,nat_log, boxcox, sinharcsinh, meanstd,\
                    zero_mean, unit_var')
+        
+        if ow_noise is None or (isinstance(ow_noise, list) and all(isinstance(item, str) and len(item) >= 1 for item in ow_noise)):
+            # Output warping
+            self.ow_noise = ow_noise
+        else:
+            sys.exit('(ERROR) : ow_noise must be set to None for no warping, or a list of allowed opeartions given by the strngs affine,nat_log, boxcox, sinharcsinh, meanstd,\
+                   zero_mean, unit_var')
 
        
     #############################################################
@@ -155,7 +179,7 @@ class GP_class:
     #############################################################
 
     # Set test train
-    def set_test_train(self, train_frac):
+    def set_test_train(self, train_mean, train_noise):
         """
         Set test train split for given fraction
         
@@ -165,11 +189,12 @@ class GP_class:
         
         """
         # Extract test/train values
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X_sc , self.y, test_size=1.0-train_frac)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X_sc , self.y, test_size=1.0-train_mean)
+        self.X_var_train, self.X_var_test, self.y_var_train, self.y_var_test = train_test_split(self.X_sc , self.y_var, test_size=1.0-train_noise)
 
 
     # Guess priors for parameters
-    def set_priors(self):
+    def set_priors(self, model):
         """
         Set priors
 
@@ -177,7 +202,17 @@ class GP_class:
         ndarray
             The list of parameter priors.
 
-        """
+        """ 
+
+        if model == 'noise':
+            # Guess for Gaussian nois
+            noise_prior = scipy.stats.halfnorm(loc=1e-6, scale=1e-2)
+            ow = self.ow_noise
+            kern = self.kern_var
+        elif model == 'mean':
+            noise_prior = scipy.stats.halfnorm(loc=1e-6, scale=1e-2)
+            ow = self.ow_model
+            kern = self.kern
 
         # Guess of length-scale prior
         l_prior = scipy.stats.invgamma(a=2, scale=1)
@@ -201,45 +236,58 @@ class GP_class:
             # Input warp
             for i in range(self.n_iw_params):
                 priors.append(iw_prior)
-            self.iw_idx = len(priors)
+            if model == 'noise':
+                self.iw_noise_idx = len(priors)
+            elif model == 'mean':
+                self.iw_idx = len(priors)
         else:
-            self.iw_idx = 0
+            if model == 'noise':
+                self.iw_noise_idx = 0
+            elif model == 'mean':
+                self.iw_idx = 0
 
         # Set output warp params
-        if self.ow_model is not None:
-            for i in range(len(self.ow_model)):
-                if self.ow_model[i] in ('affine', 'sinharcsinh'):
+        if ow is not None:
+            for i in range(len(ow)):
+                if ow[i] in ('affine', 'sinharcsinh'):
                     priors.extend([ow_a_prior, ow_b_prior])
-                elif self.ow_model[i] in ('boxcox', 'unit_var'):
+                elif ow[i] in ('boxcox', 'unit_var'):
                     priors.append(ow_a_prior)
-                elif self.ow_model[i] in ('zero_mean'):
+                elif ow[i] in ('zero_mean'):
                     priors.append(ow_b_prior)
-                elif self.ow_model[i] in ('nat_log', 'meanstd'):
+                elif ow[i] in ('nat_log', 'meanstd'):
                     continue
-            self.ow_idx = len(priors)
+            if model == 'noise':
+                self.ow_noise_idx = len(priors)
+            elif model == 'mean':
+                self.ow_idx = len(priors)
         else:
-            self.ow_idx = self.iw_idx
+            if model == 'noise':
+                self.ow_noise_idx = self.iw_noise_idx
+            elif model == 'mean':
+                self.ow_idx = self.iw_idx
 
-        # Guess for Gaussian nois
-        noise_prior = scipy.stats.halfnorm(loc=1e-6, scale=1e-2)
         # Gaussian Noise
         priors.append(noise_prior)
 
         # Location of hypers idx
-        self.hypers_idx = len(priors)
+        if model == 'noise':
+            self.hypers_noise_idx = len(priors)
+        elif model == 'mean':
+            self.hypers_idx = len(priors)
 
         # Set kernel parameters
         if self.n_inputs == 1:      
-            for i in range(len(self.kern)): 
-                if self.kern[i] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
+            for i in range(len(kern)): 
+                if kern[i] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                     priors.extend([kern_var_prior, l_prior])
-                elif self.kern[i] == 'RAT_QUAD':
+                elif kern[i] == 'RAT_QUAD':
                     priors.extend([kern_var_prior, l_prior, alpha_prior])
         else:
-            for i in range(len(self.kern)):
-                k_type = kernels.kernel_type(self.kern[i])
-                label = kernels.get_kernel_label(self.kern[i])
-                dims = kernels.extract_numbers_after_kernel(self.kern[i])
+            for i in range(len(kern)):
+                k_type = kernels.kernel_type(kern[i])
+                label = kernels.get_kernel_label(kern[i])
+                dims = kernels.extract_numbers_after_kernel(kern[i])
 
                 if k_type in {"_ISO",  None}:
                     # Isotropic (all dimensions, or given) or seperable with given dimensions
@@ -275,7 +323,7 @@ class GP_class:
         return priors
     
     # input warp
-    def input_warp(self, X, theta):
+    def input_warp(self, X, theta, model):
         """
         Input warping
         
@@ -291,8 +339,12 @@ class GP_class:
 
         """
 
-        # Parameters
-        iw_params = theta[0:self.iw_idx]
+        # Set parameters
+        if model == 'noise':
+            iw_params = theta[0:self.iw_noise_idx]
+        elif model == 'mean':
+            iw_params = theta[0:self.iw_idx]
+
         # Warp with kumaraswamy distribution
         X_iw = np.zeros_like(X)
         idx = 0
@@ -303,7 +355,7 @@ class GP_class:
         return X_iw
     
     # Noise output warp
-    def output_warp(self, y, theta):
+    def output_warp(self, y, theta, model):
         """
         Output warping
         
@@ -319,15 +371,24 @@ class GP_class:
 
         """
 
-        # Set class for output warping
-        ow_params = theta[self.iw_idx:self.ow_idx]
-        self.owc = output_warp(warpings=self.ow_model, params=ow_params, y=y)
-        y_warped = self.owc.transform(y)
-        jac = self.owc.Jacobian(y)
+        # Set class for noise model parameters
+        if model == 'noise':
+            ow_params = theta[self.iw_noise_idx:self.ow_noise_idx]
+            self.owc_noise = output_warp(warpings=self.ow_noise, params=ow_params, y=y)
+            y_warped = self.owc_noise.transform(y)
+            jac = self.owc_noise.Jacobian(y)
+        
+        # Set class for mean model parameters
+        elif model == 'mean':
+            ow_params = theta[self.iw_idx:self.ow_idx]
+            self.owc = output_warp(warpings=self.ow_model, params=ow_params, y=y)
+            y_warped = self.owc.transform(y)
+            jac = self.owc.Jacobian(y)
+        
         return y_warped, jac
 
     # Get noise kernel
-    def set_kernel(self, X_a, X_b, theta):
+    def set_kernel(self, X_a, X_b, theta, model):
         """
         Set custom kernel
         
@@ -344,22 +405,30 @@ class GP_class:
 
         """
 
-        # Hyper-parameters
-        hypers = theta[self.hypers_idx:]    
+        # Hyper-paramters stored after warp and noise params
+        if model == 'noise':
+            hypers = theta[self.hypers_noise_idx:]
+            kern = self.kern_var
+            kern_ops = self.kern_var_ops        
+        elif model == 'mean':
+            hypers = theta[self.hypers_idx:]
+            kern = self.kern
+            kern_ops = self.kern_ops
+
         if self.iw:
             # Warp inputs
-            X_a = self.input_warp(X_a, theta)
-            X_b = self.input_warp(X_b, theta)
+            X_a = self.input_warp(X_a, theta, model)
+            X_b = self.input_warp(X_b, theta, model)
 
         # Make kernel
         if self.n_inputs == 1:
-            K = kernels.make_kernel(self.kern, self.kern_ops, X_a, X_b, hypers)
+            K = kernels.make_kernel(kern, kern_ops, X_a, X_b, hypers)
         elif self.n_inputs > 1:
-            K = kernels.make_kernel_nD(self.kern, self.kern_ops, X_a, X_b, hypers)
+            K = kernels.make_kernel_nD(kern, kern_ops, X_a, X_b, hypers)
         return K
                     
     # Get noise model weights and kernel
-    def update_gp(self, theta):
+    def update_gp(self, theta, model):
         """
         Update Gaussian Process
         
@@ -368,18 +437,33 @@ class GP_class:
 
         """
 
-        # Noise
-        self.sigma_n = theta[self.ow_idx:self.hypers_idx]
-        if self.ow_model != None:
-            # Output warp
-            self.y_warp, self.jac = self.output_warp(self.y_train, theta)
-        else:
-            self.y_warp = self.y_train
-            self.jac = 1 # Log(jac) = 0 thus recovers old log marginal likelihood
+        if model == 'noise':
+            # Noise
+            self.sigma_n = theta[self.ow_noise_idx:self.hypers_noise_idx]
+            if self.ow_noise != None:
+                # Output warp
+                self.y_warp, self.jac = self.output_warp(self.y_var_train, theta, model)
+            else:
+                self.y_warp = self.y_var_train
+                self.jac = 1 # Log(jac) = 0 thus recovers old log marginal likelihood
+            # Input 
+            X = self.X_var_train
+
+        elif model == 'mean':
+            # Noise
+            self.sigma_n = theta[self.ow_idx:self.hypers_idx]
+            if self.ow_model != None:
+                # Output warp
+                self.y_warp, self.jac = self.output_warp(self.y_train, theta, model)
+            else:
+                self.y_warp = self.y_train
+                self.jac = 1 # Log(jac) = 0 thus recovers old log marginal likelihood
+            # Input 
+            X = self.X_train
 
         # Kernel
-        self.K = self.set_kernel(self.X_train, self.X_train, theta)
-        self.K += np.eye(len(self.X_train)) * self.sigma_n
+        self.K = self.set_kernel(X, X, theta, model)
+        self.K += np.eye(len(X)) * self.sigma_n
 
         try:
             # Weights
@@ -387,9 +471,14 @@ class GP_class:
         except np.linalg.LinAlgError:
             sys.exit('Defined kernel is NOT positive defnite, please make another kernel')
         self.weights = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.y_warp))
-        
+    
+
+            #############################################
+            # FORM HERE (ON TRAIN)
+            #############################################
+
     # Predictive posterior
-    def posterior_predict(self, X_star, scale=False, get_var=False):
+    def posterior_predict(self, X_star, model, scale=False, get_var=False):
         
         """
         Inference at new input locations.
@@ -406,7 +495,7 @@ class GP_class:
             The posterior predictive mean and var (if get_var=True).
         """
 
-        if X_star.shape[-1] != self.X_train.shape[-1]:
+        if X_star.shape[-1] != self.n_inputs:
             sys.exit('(ERROR) : Number of inputs at new locations does match that of the training data')
 
         # Re-scale
@@ -418,15 +507,22 @@ class GP_class:
             X_star = X_sc
         
         # Extract posterior prediction
-        mu, var = self.__posterior_predict(X_star)
+        mu, var = self.__posterior_predict(X_star, model)
+
+        # Get additional noise prediction
+        if model == 'mean':
+            mu_noise, var_noise = self.__posterior_predict(X_star, model='noise')
         
         # Return variance
         if get_var:
-            return mu, var
+            if model == 'mean':
+                return mu, var, mu_noise
+            elif model == 'noise':
+                return mu, var
         else:
             return mu
         
-    def __posterior_predict(self, X_star):
+    def __posterior_predict(self, X_star, model):
 
         """
         Function to evaluate inference
@@ -438,13 +534,22 @@ class GP_class:
         ndarray
             The posterior predictive mean and variance
         """
-        
+
         # Set required GP variables
-        self.update_gp(self.theta)
+        if model == 'noise':
+            theta = self.theta_noise
+            self.update_gp(theta, model)
+            X = self.X_var_train
+            ow = self.ow_noise
+        elif model == 'mean':
+            theta = self.theta
+            self.update_gp(theta, model)
+            X = self.X_train
+            ow = self.ow_model
    
         # Posterior Mean
-        K_star = self.set_kernel(X_star, X_star, self.theta)
-        k_star = self.set_kernel(self.X_train, X_star, self.theta)
+        K_star = self.set_kernel(X_star, X_star, theta, model)
+        k_star = self.set_kernel(X, X_star, theta, model)
         mu = np.dot(k_star.T, self.weights)
 
         # Variance
@@ -455,9 +560,11 @@ class GP_class:
         # Noise
         var_noise = np.ones(len(var_epi)) * self.sigma_n
         var = var_epi + var_noise
+
         # If warped revert
-        if self.ow_model is not None:
-            mu, var = self.gauss_hermite_quad(mu, var)
+        if ow is not None:
+            mu, var = self.gauss_hermite_quad(mu, var, model)
+
         return mu, var
 
         
@@ -490,7 +597,7 @@ class GP_class:
                 Negative Log marginal likelihood
             
         """
-            self.update_gp(theta)
+            self.update_gp(theta, self.model)
             sign, logdet = np.linalg.slogdet(self.K)
             n = len(self.K.diagonal())
             log_L = -0.5*np.dot(self.y_warp.T, self.weights) - 0.5*logdet - 0.5*n*np.log(2*np.pi) + np.sum(np.log(self.jac))
@@ -498,7 +605,7 @@ class GP_class:
         return get_log_likelihood
 
     # Optimisation routine using scipy minimize optimize or differential evoloution
-    def optimise_gp(self, solver='opt', n_restarts=10, method='L-BFGS-B', max_iter=5000, strategy='best1bin', tol=1e-6, save=True, fname='mean_model_nD.pkl'):
+    def optimise_gp(self, model, solver='opt', n_restarts=10, method='L-BFGS-B', max_iter=5000, strategy='best1bin', tol=1e-6, save=True, fname='mean_model_nD.pkl'):
         """
         Optimising hyperparamter routine
 
@@ -521,8 +628,11 @@ class GP_class:
             
         """
 
+        # Set model 
+        self.model = model
+
         # Priors
-        priors = self.set_priors()
+        priors = self.set_priors(model)
         bounds = []
         for i in range(len(priors)):
             bounds.append((priors[i].ppf(0.01), priors[i].ppf(0.99)))
@@ -567,35 +677,56 @@ class GP_class:
                         theta = res.x
                         log_L = res.fun
 
-        # Store optimised parameters
-        self.theta = theta
-        if save:
-            data = {"theta": self.theta,
-                    "X": self.X,
-                    "y": self.y,
-                    "y_test": self.y_test,
-                    "y_train": self.y_train,
-                    "X_test": self.X_test,
-                    "X_train": self.X_train,
-                    "kern": self.kern,
-                    "kern_ops": self.kern_ops,
-                    "iw" : self.iw,
-                    "ow_model": self.ow_model,
-                    "iw_idx": self.iw_idx,
-                    "ow_idx": self.ow_idx,
-                    "hypers_idx" : self.hypers_idx}
-            # Save to a pickle file
-            with open(fname, "wb") as file:
-                pickle.dump(data, file)
-            print(f'Saved parameters to {fname}')
+        if model == 'noise':
+            self.theta_noise = theta
+            if save:
+                data = {"theta": self.theta_noise,
+                        "X": self.X,
+                        "y": self.y_var,
+                        "y_test": self.y_var_test,
+                        "y_train": self.y_var_train,
+                        "X_test": self.X_var_test,
+                        "X_train": self.X_var_train,
+                        "kern": self.kern_var,
+                        "kern_ops": self.kern_var_ops,
+                        "iw" : self.iw,
+                        "ow_model": self.ow_noise,
+                        "iw_idx": self.iw_noise_idx,
+                        "ow_idx": self.ow_noise_idx,
+                        "hypers_idx" : self.hypers_noise_idx}
+                # Save to a pickle file
+                with open("noise_model_2D.pkl", "wb") as file:
+                    pickle.dump(data, file)
+                print('Saved parameters to noise_model_2D.pkl')
         
+        elif model == 'mean':
+            self.theta = theta
+            if save:
+                data = {"theta": self.theta,
+                        "X": self.X,
+                        "y": self.y,
+                        "y_test": self.y_test,
+                        "y_train": self.y_train,
+                        "X_test": self.X_test,
+                        "X_train": self.X_train,
+                        "kern": self.kern,
+                        "kern_ops": self.kern_ops,
+                        "iw" : self.iw,
+                        "ow_model": self.ow_model,
+                        "iw_idx": self.iw_idx,
+                        "ow_idx": self.ow_idx,
+                        "hypers_idx" : self.hypers_idx}
+                # Save to a pickle file
+                with open("mean_model_2D.pkl", "wb") as file:
+                    pickle.dump(data, file)
+                print('Saved parameters to mean_model_2D.pkl')
 
     #############################################################
     # Set parmaters manually
     #############################################################
     
     # Read in paramters dictionary with theta and indicies 
-    def read_gp_model(self, file):
+    def read_gp_model(self, file, model):
 
         """
         Read in GP model from previous save file.
@@ -608,8 +739,37 @@ class GP_class:
         with open(file, "rb") as file:
             data = pickle.load(file)
         
-        self.X = data["X"]
-        self.y = data["y"]
+        if model == 'noise':
+            self.theta_noise = data['theta']
+            self.X = data["X"]
+            self.y_var = data["y"]
+            self.y_var_test = data["y_test"]
+            self.y_var_train = data["y_train"]
+            self.X_var_test = data["X_test"]
+            self.X_var_train = data["X_train"]
+            self.kern_var = data["kern"]
+            self.kern_var_ops = data["kern_ops"]
+            self.iw = data["iw"]
+            self.ow_noise = data["ow_model"]
+            self.iw_noise_idx = data['iw_idx']
+            self.ow_noise_idx = data['ow_idx']
+            self.hypers_noise_idx = data['hypers_idx']
+        elif model == 'mean':
+            self.theta = data['theta']
+            self.X = data["X"]
+            self.y = data["y"]
+            self.y_test = data["y_test"]
+            self.y_train = data["y_train"]
+            self.X_test = data["X_test"]
+            self.X_train = data["X_train"]
+            self.kern = data["kern"]
+            self.kern_ops = data["kern_ops"]
+            self.iw = data["iw"]
+            self.ow_model = data["ow_model"]
+            self.iw_idx = data['iw_idx']
+            self.ow_idx = data['ow_idx']
+            self.hypers_idx = data['hypers_idx']
+        
         self.n_inputs = self.X.shape[-1]
         self.n_iw_params = int(2*self.n_inputs)
         
@@ -618,27 +778,15 @@ class GP_class:
         for i in range(self.n_inputs):
             sc = zero_one_scale(eps=0.01, x_max=np.max(self.X[:,i]), x_min=np.min(self.X[:,i]))
             self.X_sc[:,i] = sc.transform(self.X[:,i])
-
-        self.theta = data['theta']
-        self.y_test = data["y_test"]
-        self.y_train = data["y_train"]
-        self.X_test = data["X_test"]
-        self.X_train = data["X_train"]
-        self.kern = data["kern"]
-        self.kern_ops = data["kern_ops"]
-        self.iw = data["iw"]
-        self.ow_model = data["ow_model"]
-        self.iw_idx = data['iw_idx']
-        self.ow_idx = data['ow_idx']
-        self.hypers_idx = data['hypers_idx']
+            
         # Update GP variables
-        self.update_gp(data['theta'])
+        self.update_gp(data['theta'], model)
   
     
     #############################################################
     # Gauss - Hermite quadrature
     #############################################################
-    def gauss_hermite_quad(self, mu, var, deg=8):
+    def gauss_hermite_quad(self, mu, var, model, deg=8):
 
         """
         Gauss-Hermite quadrature to restore output to real space predictions.
@@ -660,9 +808,11 @@ class GP_class:
         x_i, w_i = np.polynomial.hermite.hermgauss(deg)
         for i in range(len(mu)):
             y_i = np.sqrt(2.0*var[i])*x_i + mu[i]
-
-            # invert to pre warped space
-            y_ir = self.owc.inverse(y_i)
+            
+            if model == 'noise':
+                y_ir = self.owc_noise.inverse(y_i)
+            elif model == 'mean':
+                y_ir = self.owc.inverse(y_i)
 
             # New mean
             mu[i] = 1.0/np.sqrt(np.pi) * np.sum(w_i*y_ir)
@@ -678,7 +828,7 @@ class GP_class:
     # Plotters
     #############################################################
     # Test train plots
-    def test_train_plots(self, fname=f'test_train.png'):
+    def test_train_plots(self, model, fname=f'test_train.png'):
 
         """
         Plot test-train plots for GP prediction
@@ -689,14 +839,34 @@ class GP_class:
         
         fig = plt.figure()
 
-        # train and test predictions
-        y_train_predict, var_train = self.posterior_predict(self.X_train, scale=False, get_var=True) 
-        y_test_predict, var_test = self.posterior_predict(self.X_test, scale=False, get_var=True) 
+        # Set correct model params
+        if model == 'noise':
+            y = self.y_var
+            X_train = self.X_var_train
+            X_test = self.X_var_test
+            y_train = self.y_var_train
+            y_test = self.y_var_test
+
+            # train and test predictions
+            y_train_predict, var_train = self.posterior_predict(X_train, model, scale=False, get_var=True) 
+            y_test_predict, var_test = self.posterior_predict(X_test, model, scale=False, get_var=True) 
         
+        elif model == 'mean':
+            y = self.y
+            X_train = self.X_train
+            X_test = self.X_test
+            y_train = self.y_train
+            y_test = self.y_test
+
+            # train and test predictions
+            y_train_predict, var_train, noise_train = self.posterior_predict(X_train, model, scale=False, get_var=True) 
+            y_test_predict, var_test, noise_test = self.posterior_predict(X_test, model, scale=False, get_var=True) 
+            # var_train += noise_train
+            # var_test += noise_test
 
         # root mean square error
-        rmse_train = np.sqrt(np.mean((self.y_train-y_train_predict)**2))
-        rmse_test = np.sqrt(np.mean((self.y_test-y_test_predict)**2)) 
+        rmse_train = np.sqrt(np.mean((y_train-y_train_predict)**2))
+        rmse_test = np.sqrt(np.mean((y_test-y_test_predict)**2)) 
      
         # standard deviation
         S_ptrain = np.sqrt(var_train)
@@ -704,26 +874,26 @@ class GP_class:
 
         # Plot correlation between values and errors
         fig, ((ax1, ax2, ax3)) = plt.subplots(1, 3)
-        ax3 = sns.kdeplot(np.array(self.y), label = 'Target Data', linestyle='dashdot', linewidth = 5, color = 'black')
+        ax3 = sns.kdeplot(np.array(y), label = 'Target Data', linestyle='dashdot', linewidth = 5, color = 'black')
         ax3 = sns.kdeplot(y_train_predict, label=f'Train', color = 'blue')
         ax3 = sns.kdeplot(y_test_predict, label=f'Test', color = 'orange')
         ax3.legend(frameon=False)
         ax3.set_xlabel(r'Output Values')
 
-        ax1.scatter(self.y_train, y_train_predict, label=f'Train (RSME = {np.round(rmse_train, 3)})', color = 'blue')
-        ax1.plot([self.y.min(), self.y.max()], [self.y.min(), self.y.max()], 'k:', label = 'Target')
+        ax1.scatter(y_train, y_train_predict, label=f'Train (RSME = {np.round(rmse_train, 3)})', color = 'blue')
+        ax1.plot([y.min(), y.max()], [y.min(), y.max()], 'k:', label = 'Target')
         ax1.set_xlabel(r'True Value')
         ax1.set_ylabel(r'Predicted Value')
-        ax2.plot(abs(y_train_predict - self.y_train), S_ptrain, 'o', label='Train', color = 'blue')
+        ax2.plot(abs(y_train_predict - y_train), S_ptrain, 'o', label='Train', color = 'blue')
         ax2.plot([0, S_ptrain.max()], [0, S_ptrain.max()], 'k:', label = 'Target')
-        ax1.scatter(self.y_test, y_test_predict, label=f'Test (RSME = {np.round(rmse_test, 3)})', color = 'orange')
+        ax1.scatter(y_test, y_test_predict, label=f'Test (RSME = {np.round(rmse_test, 3)})', color = 'orange')
         ax1.legend()
-        ax2.plot(abs(y_test_predict - self.y_test), S_ptest, 'o', label='Test', color='orange')
+        ax2.plot(abs(y_test_predict - y_test), S_ptest, 'o', label='Test', color='orange')
         ax2.plot([0, S_ptest.max()], [0, S_ptest.max()], 'k:', label = 'Target')
         ax2.legend()
         ax2.set_xlabel(r'True Error')
         ax2.set_ylabel(r'Predicted Error')
-        ax1.set_ylim(self.y.min(), self.y.max())
+        ax1.set_ylim(y.min(), y.max())
         # Make plots spaced out
         plt.subplots_adjust(left=0.1,
                             bottom=0.1, 

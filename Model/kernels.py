@@ -431,7 +431,6 @@ def make_kernel_nD(kern_labels, kern_ops, X_a, X_b, hypers):
                     
                     # How many hyper-parameters to move afterwards for next part
                     param_move = int(0.5*X_a.shape[-1]*(X_a.shape[-1]+1))
-
                     # Fill lower triangular matrix
                     L = np.zeros((X_a.shape[-1], X_a.shape[-1]))
                     L[np.tril_indices(X_a.shape[-1])] = hypers[idx+1:param_move+1]
