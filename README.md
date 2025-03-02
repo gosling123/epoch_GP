@@ -241,49 +241,49 @@ Given the training data \( (X, y) \), the posterior mean and variance at test po
 
 - **Posterior Mean**:
 
-  \[
+    ```math
   \mu(\tilde{X}^*) = \mathbf{K}(\tilde{X}^*, \tilde{X})\left[\mathbf{K}(\tilde{X}, \tilde{X}) + \sigma^2_{n}\mathbf{I}\right]^{-1}\mathbf{\tilde{y}}
-  \]
+  ```
 
 - **Posterior Variance**:
 
-  \[
+    ```math
   \text{Var}(\tilde{X}^*) = \mathbf{K}(\tilde{X}^*, \tilde{X}) - \mathbf{K}(\tilde{X}^*, \tilde{X})\left[\mathbf{K}(\tilde{X}, \tilde{X}) + \sigma^2_{n}\mathbf{I}\right]^{-1}\mathbf{K}(\tilde{X}, \tilde{X}^*)
-  \]
+  ```
 
-Here, \( K \) denotes the kernel matrix, and \( \tilde{X} = F(X, \theta_{iw}) \) and \( \tilde{y} = \phi(y, \theta_{ow}) \). 
+Here, `K` denotes the kernel matrix, and `\tilde{X} = F(X, \theta_{iw})` and ` \tilde{y} = \phi(y, \theta_{ow})`. 
 
 To improve numerical stability, Cholesky decomposition is applied to avoid matrix inversion:
 
-\[
+```math
 \mathbf{L}\mathbf{L}^{T} = \mathbf{K}(\tilde{X}, \tilde{X}) + \sigma_n^2\mathbf{I}
-\]
+```
 
 where \( \mathbf{L} \) is a lower triangular matrix. From this, we define the weights \( \alpha \) as:
 
-\[
+  ```math
 \mathbf{\alpha} = \left[\mathbf{K}(\tilde{X}, \tilde{X}) + \sigma_n^2\mathbf{I}\right]^{-1} \tilde{\mathbf{y}} \quad \rightarrow \quad \alpha = \mathbf{L}^T \backslash (\mathbf{L} \backslash \mathbf{y})
-\]
+```
 
 Thus, the mean becomes:
 
-\[
+  ```math
 \mu(X^{\star}) = \mathbf{K}(\tilde{X}^*, \tilde{X})\mathbf{\alpha}
-\]
+```
 
 Similarly, for variance:
 
-\[
+  ```math
 \mathbf{v} = \mathbf{L} \backslash \mathbf{K}(\tilde{X}, \tilde{X}^*) \quad \rightarrow \quad \text{Var}(\tilde{X}^*) = \mathbf{K}(\tilde{X}^*, \tilde{X}^*) - \mathbf{v}^T\mathbf{v}
-\]
+```
 
 Finally, the predictions are converted back to the original output space (non-warped), using Gaussian quadrature to approximate the integral:
 
-\[
+  ```math
 \mathbb{E}\left[y^n\right] = \int_{-\infty}^{\infty} (\phi^{-1}(\tilde{y}))^{n}f_{\tilde{y}}(\tilde{y}) \mathrm{d}\tilde{y}
-\]
+```
 
-where \( w_i \) and \( \beta_i \) are the Gaussian quadrature weights and nodes, respectively. The mean and variance are computed by evaluating \( \mathbb{E}\left[y\right] \) and \( \mathbb{E}\left[y^2\right] - \mathbb{E}\left[y\right]^2 \).
+where $w_i$ and \( \beta_i \) are the Gaussian quadrature weights and nodes, respectively. The mean and variance are computed by evaluating \( \mathbb{E}\left[y\right] \) and \( \mathbb{E}\left[y^2\right] - \mathbb{E}\left[y\right]^2 \).
 
 ---
 
@@ -291,18 +291,18 @@ where \( w_i \) and \( \beta_i \) are the Gaussian quadrature weights and nodes,
 
 The kernel hyperparameters are optimized by maximizing the log marginal likelihood, which is computationally done by minimizing the negative log marginal likelihood. To ensure the optimization is done in the original space (even when using warped data), we perform a change of variables on the probability density:
 
-\[
+  ```math
 f_{y}(y) = f_{\tilde{y}}(\tilde{y}) \left|\frac{\mathrm{d}\tilde{y}}{\mathrm{d}y}\right|
-\]
+```
 
 The log marginal likelihood is then defined as:
 
-\[
+  ```math
 \log \mathbb{P}(y | X) = -\frac{1}{2} \tilde{\mathbf{y}}^T \left[ \mathbf{K}(\tilde{X}, \tilde{X}) + \sigma^2_{n} \mathbf{I} \right]^{-1} \tilde{\mathbf{y}} 
 - \frac{1}{2} \log \left|\left[ \mathbf{K}(\tilde{X}, \tilde{X}) + \sigma^2_{n} \mathbf{I} \right]^{-1}\right| 
 - \frac{n}{2} \log 2\pi 
 + \sum_{i=1}^{n} \log{\left(\left|\frac{\mathrm{d}\tilde{y}}{\mathrm{d}y}\right|\right)}
-\]
+```
 
 This optimization is typically performed using `scipy.minimize` with the L-BFGS-B method or `scipy.optimize.differential_evolution` for stochastic global optimization. The differential evolution method requires more function evaluations and is better suited for problems with fewer hyperparameters. For the `minimize` function, multiple restarts are recommended to avoid local minima. Performance can be improved by defining the derivative of the log marginal likelihood, though this is not yet implemented.
 
