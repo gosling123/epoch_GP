@@ -137,6 +137,8 @@ where $a$ and $b$ are transformation parameters, learned alongside kernel hyperp
 
 where $\epsilon$ ensures numerical stability and allows predictions slightly beyond the training domain.
 
+To enable input warping in the code, you set `iw=True`.
+
 
 ## Output Warping
 
@@ -204,6 +206,14 @@ For high-dimensional problems, a single transformation may not be sufficient. Co
 
 Affine transformations are typically included to standardize the output to zero mean and unit variance. If a nonzero mean function is used, the Affine transform parameters can be adjusted accordingly.
 
+
+### Output warping in the code
+To set the output warping in the code we provide a list of warping models in `ow_model` ot `ow_noise` for the noise model GP.
+
+The allowed string flags are given by `('affine','nat_log', 'boxcox', 'sinharcsinh', 'meanstd','zero_mean', 'unit_var')`.
+
+The order in which you plave these labels contols the ordering of the output warping.
+
 ## GP Inference
 
 Given the training data $(X, y)$, the posterior mean and variance at test points $X^*$ are computed as follows:
@@ -253,6 +263,9 @@ Finally, the predictions are converted back to the original output space (non-wa
 ```
 
 where $w_i$ and $\beta_i$ are the Gaussian quadrature weights and nodes, respectively. The mean and variance are computed by evaluating $\mathbb{E}\left[y\right]$ and $\mathbb{E}\left[y^2\right] - \mathbb{E}\left[y\right]^2$.
+
+#### Heteroscedastic Model
+The code performs a varying noise model by converting $\sigma_n^2$ to be input dependent. Here the noise model is itself a Gaussian process which is trained on variance data across the input space. This Gaussian process should be trained before the mean data model. The noise model Gaussian process is handeled the same as the mean data. Examples use of this model is given for 1D and 2D cases in `test_example`.
 
 ---
 
