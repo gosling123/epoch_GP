@@ -121,3 +121,40 @@ Combinations of kernels are allowed using the `kern_ops` variable, with the foll
 * All input dimensions must be used at least once.
 * Non-separable and ARD flags cannot be used for 1D inputs.
 
+## Input Warping
+
+Gaussian processes assume a stationary covariance function, but real-world functions often vary across input space. Input warping adapts to such variations. This implementation uses the Kumaraswamy distribution:
+
+```math
+F(x, \theta_{iw}) = 1 - (1 - x^a)^b,
+```
+
+where `a` and `b` are transformation parameters, learned alongside kernel hyperparameters. Inputs must be between `[0,1]`, so we first apply an affine transformation:
+
+```math
+\tilde{x} = \frac{x - x_{min}}{x_{max} - x_{min}} + \epsilon,
+```
+
+where `\epsilon` ensures numerical stability and allows predictions slightly beyond the training domain.
+
+## Output Warping
+
+Standard Gaussian processes assume Gaussian-distributed outputs, which may not always hold. Output warping transforms outputs to better fit this assumption. Common transformations include:
+
+| Transformation | Forward Map `\phi(y, \theta_{ow})` | Inverse `\phi^{-1}(\tilde{y}, \theta_{ow})`              | Jacobian `d\phi/dy`                                |                                                                  |         |   |          |
+| -------------- | ---------------------------------- | -------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- | ------- | - | -------- |
+| Affine         | `a y + b`                          | `(\tilde{y} - b)/a`                                      | `a`                                                |                                                                  |         |   |          |
+| Log            | `\ln(y)`                           | `\exp(\tilde{y})`                                        | `1/y`                                              |                                                                  |         |   |          |
+| Box-Cox        | \`\frac{\text{sgn}(y)              | y                                                        | ^{a-1} - 1}{a-1}\`                                 | `\frac{\text{sgn}((a-1)\tilde{y} +1)}{(a-1)\tilde{y} + 1}^{a-1}` | \`(a-1) | y | ^{a-2}\` |
+| Sinh-Arcsinh   | `\sinh(b\sinh^{-1}y -a)`           | `\sinh\left(\frac{\sinh^{-1}(\tilde{y}) - a}{b} \right)` | `\frac{b \cosh(b \sinh^{-1}y -a)}{\sqrt{1 + y^2}}` |                                                                  |         |   |          |
+
+### Composite Output Warping
+
+For high-dimensional problems, a single transformation may not be sufficient. Composite warping applies multiple transformations in sequence:
+
+```math
+\tilde{y} = w_n(w_{n-1}(w_{n-2}(...), \theta_{n-1}), \theta_n).
+```
+
+Affine transformations are typically included to standardize the output to zero mean and unit variance. If a nonzero mean function is used, the Affine transform parameters can be adjusted accordingly.
+
