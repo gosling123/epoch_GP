@@ -35,14 +35,14 @@ y_obs = np.load('../test_data/1D_data/output_reflect_obs.npy')
 ############################################################################
 
 # Set kernels
-kern=['MATERN_5_2']
-kern_ops = []
-kern_var=['MATERN_5_2']
+kern=['RBF', 'MATERN_5_2']
+kern_ops = ['*']
+kern_var=['RBF']
 kern_var_ops = []
 
 # Set output warp models
-ow_model=['nat_log', 'meanstd']
-ow_noise=['nat_log', 'meanstd']
+ow_model=['nat_log', 'unit_var', 'sinharcsinh', 'affine' , 'sinharcsinh', 'meanstd']
+ow_noise=['nat_log', 'unit_var', 'sinharcsinh', 'affine' , 'sinharcsinh', 'meanstd']
 
 # Input warp 
 iw = True
@@ -51,7 +51,7 @@ iw = True
 gp =  GP_hetscedat_class(X, y, y_var, kern, kern_ops,  kern_var, kern_var_ops, iw, ow_model, ow_noise)
 
 # set test and train split
-gp.set_test_train(train_mean=0.7, train_noise=0.7)
+gp.set_test_train(train_mean=0.75, train_noise=0.75)
 
 
 ############################################################################
@@ -68,6 +68,7 @@ else:
      gp.optimise_gp(model='noise', solver='opt', n_restarts=5)
 
 print(gp.theta_noise)
+print(gp.theta_noise_labels)
 
 # Test train plots
 gp.test_train_plots(model='noise', fname='1D_noise_plot.png')
@@ -87,6 +88,7 @@ else:
      gp.optimise_gp(model='mean', solver='opt', n_restarts=5)
 
 print(gp.theta)
+print(gp.theta_labels)
 
 # Test train plots
 gp.test_train_plots(model='mean', fname='1D_mean_plot.png')
@@ -118,8 +120,8 @@ plt.savefig('var_ow.png')
 # Extract model prediction
 X_new = np.linspace(1e14, 1e16, 100)
 mean, var_epi, var_noise = gp.posterior_predict(X_new, model='mean', scale=True, get_var=True)
-err_epi = 1.0 * np.sqrt(var_epi)
-err_tot = 1.0 * np.sqrt(var_epi + var_noise)
+err_epi = 2.0 * np.sqrt(var_epi)
+err_tot = 2.0 * np.sqrt(var_epi + var_noise)
 lower_epi = np.maximum(0, mean - err_epi)
 upper_epi = mean + err_epi
 lower_tot = np.maximum(0, mean - err_tot)

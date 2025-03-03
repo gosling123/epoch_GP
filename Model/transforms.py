@@ -201,7 +201,7 @@ def check_ow(warpings, warpings_list):
 
 class output_warp:
 
-  def __init__(self, warpings, params, y):
+  def __init__(self, warpings, params):
 
     warp_labels = ['affine','nat_log', 'boxcox', 'sinharcsinh', 'meanstd',\
                    'zero_mean', 'unit_var']

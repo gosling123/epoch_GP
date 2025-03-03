@@ -61,6 +61,7 @@ else:
     # Optimise noise gp
     gp.optimise_gp(solver='opt', n_restarts=6, save=True, fname="2D_test.pkl")
 print(gp.theta)
+print(gp.theta_labels)
 
 # Test train plots
 gp.test_train_plots(fname='2D_test_train.png')

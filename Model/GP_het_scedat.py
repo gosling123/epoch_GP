@@ -234,7 +234,7 @@ class GP_hetscedat_class:
             ow = self.ow_noise
             kern = self.kern_var
         elif model == 'mean':
-            noise_prior = scipy.stats.halfnorm(loc=1e-6, scale=1e-2)
+            noise_prior = scipy.stats.halfnorm(loc=1e-6, scale=1e-4)
             ow = self.ow_model
             kern = self.kern
 
@@ -255,11 +255,16 @@ class GP_hetscedat_class:
         ow_b_prior = scipy.stats.lognorm(s=0.25, scale=1)
         
         priors = []
+        param_labels = []
 
         if self.iw:
             # Input warp
             for i in range(self.n_iw_params):
                 priors.append(iw_prior)
+                if (i+1) % 2 == 1:  # Odd number
+                    param_labels.append('iw_a')
+                else:
+                    param_labels.append('iw_b')
             if model == 'noise':
                 self.iw_noise_idx = len(priors)
             elif model == 'mean':
@@ -275,10 +280,13 @@ class GP_hetscedat_class:
             for i in range(len(ow)):
                 if ow[i] in ('affine', 'sinharcsinh'):
                     priors.extend([ow_a_prior, ow_b_prior])
+                    param_labels.extend([f'{ow[i]}_a', f'{ow[i]}_b'])
                 elif ow[i] in ('boxcox', 'unit_var'):
                     priors.append(ow_a_prior)
+                    param_labels.append(f'{ow[i]}_a')
                 elif ow[i] in ('zero_mean'):
                     priors.append(ow_b_prior)
+                    param_labels.append(f'{ow[i]}_b')
                 elif ow[i] in ('nat_log', 'meanstd'):
                     continue
             if model == 'noise':
@@ -293,6 +301,7 @@ class GP_hetscedat_class:
 
         # Gaussian Noise
         priors.append(noise_prior)
+        param_labels.append('sigma_n')
 
         # Location of hypers idx
         if model == 'noise':
@@ -305,8 +314,10 @@ class GP_hetscedat_class:
             for i in range(len(kern)): 
                 if kern[i] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                     priors.extend([kern_var_prior, l_prior])
+                    param_labels.extend([f'{kern[i]}_var', f'{kern[i]}_l'])
                 elif kern[i] == 'RAT_QUAD':
                     priors.extend([kern_var_prior, l_prior, alpha_prior])
+                    param_labels.extend([f'{kern[i]}_var', f'{kern[i]}_l', f'{kern[i]}_alpha'])
         else:
             for i in range(len(kern)):
                 k_type = kernels.kernel_type(kern[i])
@@ -317,8 +328,10 @@ class GP_hetscedat_class:
                     # Isotropic (all dimensions, or given) or seperable with given dimensions
                     if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                         priors.extend([kern_var_prior, l_prior])
+                        param_labels.extend([f'{kern[i]}_var', f'{kern[i]}_l'])
                     elif label == 'RAT_QUAD':
                         priors.extend([kern_var_prior, l_prior, alpha_prior])
+                        param_labels.extend([f'{kern[i]}_var', f'{kern[i]}_l', f'{kern[i]}_alpha'])
 
                 elif k_type in {"_ARD", "_NS"}:
                     # One variance but seperate length-scales
@@ -326,8 +339,10 @@ class GP_hetscedat_class:
                     if dims == None:
                         if k_type == "_ARD":
                             nvals = self.n_inputs
+                            string = "l"
                         elif k_type == "_NS":
                             nvals = int(0.5*self.n_inputs*(self.n_inputs+1))
+                            string = "lambda_inv"
                     else:
                         if k_type == "_ARD":
                             nvals = len(dims)
@@ -336,15 +351,20 @@ class GP_hetscedat_class:
 
                     if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                         priors.append(kern_var_prior)
-                        for i in range(nvals):
+                        param_labels.append(f'{kern[i]}_var')
+                        for j in range(nvals):
                             priors.append(l_prior)
+                            param_labels.append(f'{kern[i]}_{string}_{j+1}')
                     elif label == 'RAT_QUAD':
                         priors.append(kern_var_prior)
-                        for i in range(nvals):
+                        param_labels.append(f'{kern[i]}_var')
+                        for j in range(nvals):
                             priors.append(l_prior)
+                            param_labels.append(f'{kern[i]}_{string}_{j+1}')
                         priors.append(alpha_prior)
+                        param_labels.append(f'{kern[i]}_alpha')
 
-        return priors
+        return priors, param_labels
     
     # input warp
     def input_warp(self, X, theta, model):
@@ -381,7 +401,7 @@ class GP_hetscedat_class:
         return X_iw
     
     # Noise output warp
-    def output_warp(self, y, theta, model):
+    def output_warp(self, y, theta, model, revert=False):
         """
         Output warping
         
@@ -392,7 +412,8 @@ class GP_hetscedat_class:
             List of output warping parameters
         model : str
             String flag to set GP on mean or variance (noise) model data
-
+        revert : Logical flag
+            Flag to revert back to real space
         Returns:
         ndarray
             Warped outputs using user defined transforms.
@@ -402,18 +423,26 @@ class GP_hetscedat_class:
         # Set class for noise model parameters
         if model == 'noise':
             ow_params = theta[self.iw_noise_idx:self.ow_noise_idx]
-            self.owc_noise = output_warp(warpings=self.ow_noise, params=ow_params, y=y)
+            self.owc_noise = output_warp(warpings=self.ow_noise, params=ow_params)
             y_warped = self.owc_noise.transform(y)
             jac = self.owc_noise.Jacobian(y)
-        
+            if revert:
+                y_reversed = self.owc_noise.inverse(y)
+                return y_reversed
+            else:
+                return y_warped, jac
+
         # Set class for mean model parameters
         elif model == 'mean':
             ow_params = theta[self.iw_idx:self.ow_idx]
-            self.owc = output_warp(warpings=self.ow_model, params=ow_params, y=y)
+            self.owc = output_warp(warpings=self.ow_model, params=ow_params)
             y_warped = self.owc.transform(y)
             jac = self.owc.Jacobian(y)
-        
-        return y_warped, jac
+            if revert:
+                y_reversed = self.owc.inverse(y)
+                return y_reversed
+            else:
+                return y_warped, jac
 
     # Get noise kernel
     def set_kernel(self, X_a, X_b, theta, model):
@@ -456,7 +485,41 @@ class GP_hetscedat_class:
         elif self.n_inputs > 1:
             K = kernels.make_kernel_nD(kern, kern_ops, X_a, X_b, hypers)
         return K
-                    
+    
+
+    def monte_carlo_var_array(self, noise_var, theta, num_samples=10000):
+        """
+        Estimate the variance of transformed variables tilde_y = g(y) for an array of input variances.
+
+        
+        noise_var : ndarray
+            Noise variance prediction in real space
+        theta : list
+            List of all hyperparameters.
+        num_samples: integer 
+            Number of Monte Carlo samples per variance estimation
+    
+        Returns:
+            List of estimated variances [Var(tilde_y1), Var(tilde_y2), ...]
+        """
+        
+        var_tilde_y_array = []
+        for var_y in noise_var:
+            # Generate y samples from N(mu_y, var_y)
+            y_samples = np.random.normal(loc=0, scale=np.sqrt(var_y), size=num_samples)
+            y_samples = np.where(y_samples < 0, 1e-8, y_samples)  # Set negatives to near zero (not at zero as log 0 gives issue)
+            # Apply the transformation g(y)
+            tilde_y_samples, _ = self.output_warp(y_samples, theta, model='mean') 
+            # Compute and store the variance of transformed samples
+            if np.isnan(np.var(tilde_y_samples)):
+                print(y_samples)
+            #     print(np.var(tilde_y_samples))
+            #     print('-----------------------------')
+
+        
+            var_tilde_y_array.append(np.var(tilde_y_samples))
+        return np.array(var_tilde_y_array)
+    
     # Get noise model weights and kernel
     def update_gp(self, theta, model):
         """
@@ -493,9 +556,16 @@ class GP_hetscedat_class:
             # Input 
             X = self.X_train
 
+
         # Kernel
         self.K = self.set_kernel(X, X, theta, model)
         self.K += np.eye(len(X)) * self.sigma_n
+        # NOT QUITE WORKING AS THERE IS COMPLICATIONS WITH PREDICTIONS WITH WARPINGS, USE BASIC ADDITIONS OF NOISE FOR NOW
+        # if model == 'mean':
+        #     var = self.posterior_predict(X, model='noise', scale=False, get_var=False)
+        #     var_warp = self.monte_carlo_var_array(var, theta, num_samples=100)
+        #     # print(var_warp)
+        #     self.K += np.diag(var_warp)
 
         try:
             # Weights
@@ -591,6 +661,7 @@ class GP_hetscedat_class:
         V_star = K_star - np.dot(v.T, v)
         # Epistemic 
         var_epi = np.diag(V_star)
+        
         # Noise
         var_noise = np.ones(len(var_epi)) * self.sigma_n
         var = var_epi + var_noise
@@ -668,7 +739,7 @@ class GP_hetscedat_class:
         self.model = model
 
         # Priors
-        priors = self.set_priors(model)
+        priors, param_labels = self.set_priors(model)
         bounds = []
         for i in range(len(priors)):
             bounds.append((priors[i].ppf(0.01), priors[i].ppf(0.99)))
@@ -715,8 +786,10 @@ class GP_hetscedat_class:
 
         if model == 'noise':
             self.theta_noise = theta
+            self.theta_noise_labels = param_labels
             if save:
                 data = {"theta": self.theta_noise,
+                        "theta_labels": self.theta_noise_labels,
                         "X": self.X,
                         "y": self.y_var,
                         "y_test": self.y_var_test,
@@ -737,8 +810,10 @@ class GP_hetscedat_class:
         
         elif model == 'mean':
             self.theta = theta
+            self.theta_labels = param_labels
             if save:
                 data = {"theta": self.theta,
+                        "theta_labels": self.theta_labels,
                         "X": self.X,
                         "y": self.y,
                         "y_test": self.y_test,
@@ -779,6 +854,7 @@ class GP_hetscedat_class:
         
         if model == 'noise':
             self.theta_noise = data['theta']
+            self.theta_noise_labels = data["theta_labels"]
             self.X = data["X"]
             self.y_var = data["y"]
             self.y_var_test = data["y_test"]
@@ -794,6 +870,7 @@ class GP_hetscedat_class:
             self.hypers_noise_idx = data['hypers_idx']
         elif model == 'mean':
             self.theta = data['theta']
+            self.theta_labels = data["theta_labels"]
             self.X = data["X"]
             self.y = data["y"]
             self.y_test = data["y_test"]

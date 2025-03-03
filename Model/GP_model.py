@@ -217,11 +217,16 @@ class GP_class:
         ow_b_prior = scipy.stats.lognorm(s=0.25, scale=1)
         
         priors = []
+        param_labels = []
 
         if self.iw:
             # Input warp
             for i in range(self.n_iw_params):
                 priors.append(iw_prior)
+                if (i+1) % 2 == 1:  # Odd number
+                    param_labels.append('iw_a')
+                else:
+                    param_labels.append('iw_b')
             self.iw_idx = len(priors)
         else:
             self.iw_idx = 0
@@ -231,10 +236,13 @@ class GP_class:
             for i in range(len(self.ow_model)):
                 if self.ow_model[i] in ('affine', 'sinharcsinh'):
                     priors.extend([ow_a_prior, ow_b_prior])
+                    param_labels.extend([f'{self.ow_model[i]}_a', f'{self.ow_model[i]}_b'])
                 elif self.ow_model[i] in ('boxcox', 'unit_var'):
                     priors.append(ow_a_prior)
+                    param_labels.append(f'{self.ow_model[i]}_a')
                 elif self.ow_model[i] in ('zero_mean'):
                     priors.append(ow_b_prior)
+                    param_labels.append(f'{self.ow_model[i]}_b')
                 elif self.ow_model[i] in ('nat_log', 'meanstd'):
                     continue
             self.ow_idx = len(priors)
@@ -245,6 +253,7 @@ class GP_class:
         noise_prior = scipy.stats.halfnorm(loc=1e-6, scale=1e-2)
         # Gaussian Noise
         priors.append(noise_prior)
+        param_labels.append('sigma_n')
 
         # Location of hypers idx
         self.hypers_idx = len(priors)
@@ -254,8 +263,10 @@ class GP_class:
             for i in range(len(self.kern)): 
                 if self.kern[i] in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                     priors.extend([kern_var_prior, l_prior])
+                    param_labels.extend([f'{self.kern[i]}_var', f'{self.kern[i]}_l'])
                 elif self.kern[i] == 'RAT_QUAD':
                     priors.extend([kern_var_prior, l_prior, alpha_prior])
+                    param_labels.extend([f'{self.kern[i]}_var', f'{self.kern[i]}_l', f'{self.kern[i]}_alpha'])
         else:
             for i in range(len(self.kern)):
                 k_type = kernels.kernel_type(self.kern[i])
@@ -266,8 +277,10 @@ class GP_class:
                     # Isotropic (all dimensions, or given) or seperable with given dimensions
                     if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                         priors.extend([kern_var_prior, l_prior])
+                        param_labels.extend([f'{self.kern[i]}_var', f'{self.kern[i]}_l'])
                     elif label == 'RAT_QUAD':
                         priors.extend([kern_var_prior, l_prior, alpha_prior])
+                        param_labels.extend([f'{self.kern[i]}_var', f'{self.kern[i]}_l', f'{self.kern[i]}_alpha'])
 
                 elif k_type in {"_ARD", "_NS"}:
                     # One variance but seperate length-scales
@@ -275,8 +288,10 @@ class GP_class:
                     if dims == None:
                         if k_type == "_ARD":
                             nvals = self.n_inputs
+                            string = "l" 
                         elif k_type == "_NS":
                             nvals = int(0.5*self.n_inputs*(self.n_inputs+1))
+                            string = "lambda_inv" 
                     else:
                         if k_type == "_ARD":
                             nvals = len(dims)
@@ -285,15 +300,20 @@ class GP_class:
 
                     if label in ('EXP', 'MATERN_3_2', 'MATERN_5_2', 'RBF'):
                         priors.append(kern_var_prior)
-                        for i in range(nvals):
+                        param_labels.append(f'{self.kern[i]}_var')
+                        for j in range(nvals):
                             priors.append(l_prior)
+                            param_labels.append(f'{self.kern[i]}_{string}_{j+1}')
                     elif label == 'RAT_QUAD':
                         priors.append(kern_var_prior)
-                        for i in range(nvals):
+                        param_labels.append(f'{self.kern[i]}_var')
+                        for j in range(nvals):
                             priors.append(l_prior)
+                            param_labels.append(f'{self.kern[i]}_{string}_{j+1}')
                         priors.append(alpha_prior)
+                        param_labels.append(f'{self.kern[i]}_alpha')
 
-        return priors
+        return priors, param_labels
     
     # input warp
     def input_warp(self, X, theta):
@@ -342,7 +362,7 @@ class GP_class:
 
         # Set class for output warping
         ow_params = theta[self.iw_idx:self.ow_idx]
-        self.owc = output_warp(warpings=self.ow_model, params=ow_params, y=y)
+        self.owc = output_warp(warpings=self.ow_model, params=ow_params)
         y_warped = self.owc.transform(y)
         jac = self.owc.Jacobian(y)
         return y_warped, jac
@@ -546,7 +566,7 @@ class GP_class:
         """
 
         # Priors
-        priors = self.set_priors()
+        priors, param_labels = self.set_priors()
         bounds = []
         for i in range(len(priors)):
             bounds.append((priors[i].ppf(0.01), priors[i].ppf(0.99)))
@@ -593,8 +613,10 @@ class GP_class:
 
         # Store optimised parameters
         self.theta = theta
+        self.theta_labels = param_labels
         if save:
             data = {"theta": self.theta,
+                    "theta_labels": self.theta_labels,
                     "X": self.X,
                     "y": self.y,
                     "y_test": self.y_test,
@@ -644,6 +666,7 @@ class GP_class:
             self.X_sc[:,i] = sc.transform(self.X[:,i])
 
         self.theta = data['theta']
+        self.theta_labels = data["theta_labels"]
         self.y_test = data["y_test"]
         self.y_train = data["y_train"]
         self.X_test = data["X_test"]
