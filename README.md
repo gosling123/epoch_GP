@@ -68,7 +68,7 @@ k(\mathbf{x}, \mathbf{x'}) = \prod_{i=1}^{d} k_i(x_i, x'_i)
 Example for 3D inputs:
 ```python
 kern = ['RBF_[1]', 'MATERN_3_2_[2]', 'MATERN_5_2_[3]']
-kern_ops = ['*', '*']
+kern_ops = "k_1 * k_2 * k_3"
 ```
 
 ### General Product Kernels
@@ -76,7 +76,7 @@ kern_ops = ['*', '*']
 A kernel using multiple dimensions for a 2D model:
 ```python
 kern = ['RBF_[1]', 'RBF_[2]', 'RBF_[1,2]']
-kern_ops = ['*', '*']
+kern_ops = "k_1 + k_2 + k_3"
 ```
 where the last kernel defines an RBF kernel where $X$ is only defined in the first input dimension and $X'$ on the second.
 
@@ -86,7 +86,7 @@ Summation kernels combine multiple kernels:
 ```math
 k(\mathbf{x}, \mathbf{x'}) = k_1(\mathbf{x}, \mathbf{x'}) + k_2(\mathbf{x}, \mathbf{x'}) + \dots + k_n(\mathbf{x}, \mathbf{x'})
 ```
-Use `kern_ops = ['+', '+', ...]` to define summation operations.
+Use `kern_ops = "k_1 + k_2 + ... + k_n"` to define summation operations.
 
 ### Automatic Relevance Detection (ARD) Kernels
 
@@ -120,6 +120,10 @@ During optimisation, we assume $\Lambda = LL^{T}$, so only the lower triangular 
 Combinations of kernels are allowed using the `kern_ops` variable, with the following rules:
 * All input dimensions must be used at least once.
 * Non-separable and ARD flags cannot be used for 1D inputs.
+* Only use the allowed operations * and +
+
+Thus more complicated kernels can be defined such as:
+`kern_ops = "k_1 + (k_2 * k_3) + k_1 * k_4"`
 
 ## Input Warping
 
