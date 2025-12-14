@@ -13,37 +13,103 @@ from tqdm import tqdm
 import pickle
 
 
-
-# Kernel Checker
 def check_kernels(kern, kern_ops, kern_list, ops_list):
+    
     """
     Check that kernel description is allowes
 
     Parameters:
     kern : list of str
         Kernel label.
-    kern_ops : list of str
-        List of kernel operations.
+    kern_ops : str
+        String defining overll kernel e.g "k_1 * (k_2 + k_3) + k_4"
     kern_list : list of str
         List of allowed kernels.
     ops_list : list of str
         List of allowed kernel operations ('+' or '*').
         
     """
+
+    # --------------------------------------------------
+    # 1. Validate kernel labels provided in `kern`
+    #    Ensures each kernel name starts with an allowed prefix
+    # --------------------------------------------------
     for k in kern:
         if k in kern_list:
             continue
-        elif k.startswith(kern_list) == False:
-            sys.exit(f'(ERROR) : Kernel {k} is not defined. Kernels should start with {kern_list}')
-    
-    if len(kern_ops) != len(kern) - 1:
-            sys.exit('(ERROR!) : Kernel operations must have length len(kern)-1, as only n-1 operations are required for n combined kernels')
-    if not all(op in ops_list for op in kern_ops):
-        sys.exit(f'(ERROR!) : Kernel operation not recognised, allowed operation labels are {ops_list}')        
+        if not k.startswith(kern_list):
+            sys.exit(
+                f"(ERROR): Kernel {k} is not defined. "
+                f"Kernels should start with {kern_list}"
+            )
+
+    # --------------------------------------------------
+    # 2. Parse `kern_ops` character-by-character
+    #    - Extract k_<integer> tokens
+    #    - Validate that only allowed symbols appear
+    # --------------------------------------------------
+    found = set()                 # stores kernel indices found in kern_ops
+    i = 0                         # current position in the string
+
+    allowed_ops = set(ops_list)   # e.g. {'+', '*'}
+    allowed_single = allowed_ops | {'(', ')', ' '}  # valid single-char tokens
+
+    while i < len(kern_ops):
+        c = kern_ops[i]
+
+        # ---- Handle kernel references: k_<integer> ----
+        if c == 'k':
+            # Must be followed by an underscore
+            if i + 1 >= len(kern_ops) or kern_ops[i + 1] != '_':
+                sys.exit("(ERROR): Invalid kernel token in kern_ops")
+
+            j = i + 2  # position after 'k_'
+
+            # At least one digit must follow k_
+            if j >= len(kern_ops) or not kern_ops[j].isdigit():
+                sys.exit("(ERROR): Kernel index must be an integer")
+
+            # Read all consecutive digits to support k_10, k_123, etc.
+            num = 0
+            while j < len(kern_ops) and kern_ops[j].isdigit():
+                num = num * 10 + int(kern_ops[j])
+                j += 1
+
+            # Record the kernel index we just parsed
+            found.add(num)
+
+            # Advance index past the entire k_<number> token
+            i = j
+            continue
+
+        # ---- Handle allowed single-character tokens ----
+        # Operators, parentheses, and whitespace
+        if c in allowed_single:
+            i += 1
+            continue
+
+        # ---- Anything else is illegal ----
+        sys.exit(f"(ERROR): Illegal character '{c}' in kern_ops")
+
+    # --------------------------------------------------
+    # 3. Check kernel coverage
+    #    Ensure k_1 ... k_n all appear at least once
+    # --------------------------------------------------
+    required = set(range(1, len(kern) + 1))  # expected kernel indices
+    missing = required - found               # kernels never referenced
+
+    if missing:
+        sys.exit(
+            f"(ERROR): Missing kernel references in kern_ops: "
+            f"{', '.join(f'k_{i}' for i in sorted(missing))}"
+        )
+
+    # All checks passed
+    return True
 
 class GP_hetscedat_class:
 
-    def __init__(self, X, y, y_var, kern=['RBF'], kern_ops=[],  kern_var=['EXP'], kern_var_ops=[],\
+    def __init__(self, X, y, y_var, kern=['RBF'], kern_ops="k_1",  kern_var=['EXP'], kern_var_ops="k_1",\
                   iw=True, ow_model=['nat_log'], ow_noise=['nat_log']):
 
         """
@@ -58,12 +124,12 @@ class GP_hetscedat_class:
             Output array for training input noise variance
         kern : list of str
             List of kernels to use.
-        kern_ops : list of str
-            List of kernel operations.
+        kern_ops : str
+            String defining overll kernel e.g "k_1 * (k_2 + k_3) + k_4".
         kern_var : list of str
             List of kernels to use (for variance model).
-        kern_var_ops : list of str
-            List of kernel operations (for variance model).
+        kern_ops : str
+            String defining overll kernel e.g "k_1 * (k_2 + k_3) + k_4". (Variance model)
         iw : logical flag
             Flag to turn input warping on or off
         ow_model : list of str

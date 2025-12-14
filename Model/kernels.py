@@ -292,8 +292,8 @@ def make_kernel(kern_labels, kern_ops, X_a, X_b, hypers):
     Parameters:
     kern_labels : list of str
         List of kernel labels ('RBF', 'EXP', 'MATERN_3_2', 'MATERN_5_2', 'RAT_QUAD').
-    kern_ops : list of str
-        List of kernel operations ('+' or '*').
+    kern_ops : str
+        String defining overll kernel e.g "k_1 * (k_2 + k_3) + k_4".
     X_a : ndarray
         First input array.
     X_b : ndarray
@@ -308,6 +308,10 @@ def make_kernel(kern_labels, kern_ops, X_a, X_b, hypers):
     
     # set index for hyperparameters
     idx = 0
+
+    # Store kernels
+    kernels = {}
+    
     # Set kernel
     for i in range(len(kern_labels)):
         if kern_labels[i] == 'RBF':
@@ -325,15 +329,13 @@ def make_kernel(kern_labels, kern_ops, X_a, X_b, hypers):
         elif kern_labels[i] == 'RAT_QUAD':
             K_i = rat_quad_kernel(X_a, X_b, hyper_param=hypers[idx:idx+3])
             idx += 3
+        
+        # Add kernel to dictionary
+        kernels[f"k_{i+1}"] = K_i
             
-        if i == 0:
-            kernel = K_i
-        else:
-            if kern_ops[i-1] == '*':
-                kernel *= K_i
-            elif kern_ops[i-1] == '+':
-                kernel += K_i
-    
+    # Now perform operations to define true kernel
+    kernel = eval_kernel_expr(kern_ops, kernels)
+
     return kernel
 
 def make_kernel_nD(kern_labels, kern_ops, X_a, X_b, hypers):
@@ -343,8 +345,8 @@ def make_kernel_nD(kern_labels, kern_ops, X_a, X_b, hypers):
     Parameters:
     kern_labels : list of str
         List of kernel labels ('RBF', 'EXP', 'MATERN_3_2', 'MATERN_5_2', 'RAT_QUAD').
-    kern_ops : list of str
-        List of kernel operations ('+' or '*').
+    kern_ops : str
+        String defining overll kernel e.g "k_1 * (k_2 + k_3) + k_4".
     X_a : ndarray
         First input array.
     X_b : ndarray
@@ -359,8 +361,9 @@ def make_kernel_nD(kern_labels, kern_ops, X_a, X_b, hypers):
     
     
     idx = 0
-
     check_array = []
+    kernels = {}
+
     for i in range(len(kern_labels)):
         val = extract_numbers_after_kernel(kern_labels[i])
         if val == None:
@@ -456,14 +459,9 @@ def make_kernel_nD(kern_labels, kern_ops, X_a, X_b, hypers):
                     else:
                         sys.exit(f'(ERROR) Kernel label is not recognised {label}')   
 
-                # Apply operations
-                if i == 0:
-                    kernel = K_i
-                else:
-                    if kern_ops[i-1] == '*':
-                        kernel *= K_i
-                    elif kern_ops[i-1] == '+':
-                        kernel += K_i
+                # Add kernel to dictionary
+                kernels[f"k_{i+1}"] = K_i
+                
 
         
     
@@ -597,16 +595,13 @@ def make_kernel_nD(kern_labels, kern_ops, X_a, X_b, hypers):
                     else:
                         sys.exit(f'(ERROR) Kernel label is not recognised {label}')
 
-                # Apply operations
-                if i == 0:
-                    kernel = K_i
-                else:
-                    if kern_ops[i-1] == '*':
-                        kernel *= K_i
-                    elif kern_ops[i-1] == '+':
-                        kernel += K_i
+                # Add kernel to dictionary
+                kernels[f"k_{i+1}"] = K_i
     else:
         sys.exit('(ERROR) Naming of kernels is incorrect')
+
+    # Now perform operations to define true kernel
+    kernel = eval_kernel_expr(kern_ops, kernels)
 
     return kernel
                         
@@ -681,3 +676,131 @@ def extract_numbers(arr):
 
     return numbers
 
+#############################################################
+# Kernel calculator
+#############################################################
+
+def tokenize(expr):
+    tokens = []        # Final list of tokens (e.g. ['k_1', '*', '(' ...])
+    i = 0              # Index to walk through the string
+
+    # Loop until we have processed every character
+    while i < len(expr):
+
+        # Ignore whitespace entirely
+        if expr[i].isspace():
+            i += 1
+
+        # If the character is an operator or parenthesis,
+        # it is already a complete token
+        elif expr[i] in "+*()":
+            tokens.append(expr[i])
+            i += 1
+
+        # If the character is part of a kernel name
+        # (letters, numbers, underscores)
+        elif expr[i].isalnum() or expr[i] == "_":
+            start = i
+
+            # Keep reading characters until the name ends
+            while i < len(expr) and (expr[i].isalnum() or expr[i] == "_"):
+                i += 1
+
+            # Extract the full kernel name as one token
+            tokens.append(expr[start:i])
+
+        # Any other character is invalid
+        else:
+            raise ValueError(f"Invalid character: {expr[i]}")
+
+    return tokens
+
+def to_postfix(tokens):
+    output = []        # Final postfix expression
+    op_stack = []      # Stack to temporarily store operators
+
+    # Define operator precedence
+    precedence = {
+        "+": 1,
+        "*": 2,
+    }
+
+    # Process each token in order
+    for token in tokens:
+
+        # If the token is a kernel name (operand),
+        # send it directly to the output
+        if token not in "+*()":
+            output.append(token)
+
+        # If the token is an operator
+        elif token in "+*":
+
+            # While there is an operator on the stack
+            # with greater or equal precedence,
+            # pop it to the output
+            while (
+                op_stack
+                and op_stack[-1] in "+*"
+                and precedence[op_stack[-1]] >= precedence[token]
+            ):
+                output.append(op_stack.pop())
+
+            # Push the current operator onto the stack
+            op_stack.append(token)
+
+        # Left parenthesis: acts as a barrier
+        elif token == "(":
+            op_stack.append(token)
+
+        # Right parenthesis: pop until matching "("
+        elif token == ")":
+            while op_stack and op_stack[-1] != "(":
+                output.append(op_stack.pop())
+
+            # Remove the "(" itself
+            op_stack.pop()
+
+    # After processing all tokens,
+    # pop any remaining operators to output
+    while op_stack:
+        output.append(op_stack.pop())
+
+    return output
+
+
+def eval_postfix(postfix, kernels):
+    stack = []   # Stack to hold kernel objects
+
+    # Process each token in postfix order
+    for token in postfix:
+
+        # If the token is an operator
+        if token in "+*":
+
+            # Pop the last two kernels
+            b = stack.pop()
+            a = stack.pop()
+
+            # Apply the correct operation
+            if token == "+":
+                stack.append(a + b)
+            elif token == "*":
+                stack.append(a * b)
+
+        # Otherwise, the token is a kernel name
+        else:
+            # Push the corresponding kernel object
+            stack.append(kernels[token])
+
+    # The final result is the only item left on the stack
+    return stack[0]
+
+
+def eval_kernel_expr(expr, kernels):
+    # Step 1: Convert string into tokens
+    tokens = tokenize(expr)
+    # Step 2: Convert infix tokens to postfix
+    postfix = to_postfix(tokens)
+    # Step 3: Evaluate postfix expression
+    return eval_postfix(postfix, kernels)

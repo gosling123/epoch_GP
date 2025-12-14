@@ -35,10 +35,10 @@ y_obs = np.load('../test_data/1D_data/output_reflect_obs.npy')
 ############################################################################
 
 # Set kernels
-kern=['RBF', 'MATERN_5_2']
-kern_ops = ['*']
+kern=['RBF']
+kern_ops = "k_1"
 kern_var=['RBF']
-kern_var_ops = []
+kern_var_ops = "k_1"
 
 # Set output warp models
 ow_model=['nat_log', 'unit_var', 'sinharcsinh', 'affine' , 'sinharcsinh', 'meanstd']

@@ -34,9 +34,9 @@ y_var = np.load('../test_data/2D_data/output_reflect_var.npy').flatten()
 
 # Set kernels
 kern=['MATERN_5_2_NS']
-kern_ops = []
+kern_ops = "k_1"
 kern_var=['EXP_NS']
-kern_var_ops = []
+kern_var_ops = "k_1"
 
 # Set output warp models
 ow_model=['nat_log', 'meanstd']
